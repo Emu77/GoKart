@@ -21,6 +21,7 @@ Item {
     property string aktiveFlaeche: ''
     property var artenDerFlaeche: []   // [{ fid, name, wiss, taxon_id }]
     property string letzteMeldung: ''
+    property string diagnose: ''         // letzter Speicher-Ablauf, wird im Dialog angezeigt
 
     readonly property color gruen: '#167d50'
     readonly property color gruenHell: '#e6f6eb'
@@ -86,13 +87,52 @@ Item {
         return n;
     }
 
+    function protokoll(text) {
+        diagnose = text;
+        console.log('GoKart: ' + text);
+        try { iface.logMessage('GoKart: ' + text); } catch (e) {}
+    }
+
+    function istEditierbar(lyr) {
+        try { return (typeof lyr.isEditable === 'function') ? lyr.isEditable() : !!lyr.isEditable; }
+        catch (e) { return false; }
+    }
+
+    function commitFehler(lyr) {
+        try { var f = lyr.commitErrors(); return f && f.length ? f.join(' | ') : '-'; }
+        catch (e) { return 'nicht abrufbar'; }
+    }
+
+    // Startet Bearbeitung, führt aktion() aus, speichert dauerhaft und protokolliert jeden Schritt
     function inBearbeitung(lyr, aktion) {
-        lyr.startEditing();
+        var schritte = [];
+        if (istEditierbar(lyr)) schritte.push('war schon im Bearbeitungsmodus');
         var ok = false;
-        try { ok = aktion(); } catch (e) { console.log('GoKart: ' + e); ok = false; }
-        if (ok) ok = lyr.commitChanges();
-        if (!ok) { try { lyr.rollBack(); } catch (e2) {} }
+        try { schritte.push('start=' + lyr.startEditing()); } catch (e0) { schritte.push('start-Fehler: ' + e0); }
+        try { ok = !!aktion(); schritte.push('hinzufügen=' + ok); }
+        catch (e) { schritte.push('Fehler: ' + e); ok = false; }
+        if (ok) {
+            try { ok = !!lyr.commitChanges(); schritte.push('speichern=' + ok); }
+            catch (e3) { schritte.push('speichern-Fehler: ' + e3); ok = false; }
+        }
+        if (!ok) {
+            schritte.push('Meldung: ' + commitFehler(lyr));
+            try {
+                if (typeof lyr.rollBack === 'function') lyr.rollBack();
+                else schritte.push('rollBack nicht verfügbar');
+            } catch (e2) { schritte.push('rollBack-Fehler: ' + e2); }
+        }
+        schritte.push('danach im Bearbeitungsmodus=' + istEditierbar(lyr));
+        protokoll(lyr.name + ': ' + schritte.join(', '));
         return ok;
+    }
+
+    // Hängen ungespeicherte Änderungen im Layer (z. B. nach einem Fehler)? Dann jetzt speichern.
+    function offeneAenderungenSpeichern(lyr) {
+        if (!lyr || !istEditierbar(lyr)) return;
+        var ok = false;
+        try { ok = !!lyr.commitChanges(); } catch (e) {}
+        protokoll(lyr.name + ': offene Änderungen gefunden, gespeichert=' + ok + (ok ? '' : ', Meldung: ' + commitFehler(lyr)));
     }
 
     // ---------------------------------------------------------------- Daten laden
@@ -201,6 +241,7 @@ Item {
         if (!aktiveFlaeche) { meldung('Bitte zuerst eine Fläche wählen.'); return; }
         var an = ebene('artnachweise');
         if (!an) { meldung('Layer "artnachweise" fehlt.'); return; }
+        offeneAenderungenSpeichern(an);
 
         var schonDa = 0;
         alleFeatures(an, '"flaeche_id" = ' + textSql(aktiveFlaeche) + ' AND "taxon_id" = ' + Number(r.id), function () { schonDa++; });
@@ -218,7 +259,7 @@ Item {
             setze(f, an, 'erfasst_am', jetzt());
             return lu.addFeature(an, f);
         });
-        if (!ok) { meldung('Speichern fehlgeschlagen.'); return; }
+        if (!ok) { meldung('Speichern fehlgeschlagen – Details unten im Dialog.'); artenLaden(); return; }
 
         if (synonymMerken.visible && synonymMerken.checked) synonymSpeichern(r.id, eingabe);
         meldung('✔ ' + anzeige + ' → ' + aktiveFlaeche);
@@ -259,6 +300,8 @@ Item {
 
     function oeffnen() {
         dialog.open();
+        offeneAenderungenSpeichern(ebene('artnachweise'));
+        offeneAenderungenSpeichern(ebene('eigene_synonyme'));
         if (!index && !laedt) {
             laedt = true;
             ladeTimer.start();   // UI zuerst zeichnen, dann laden
@@ -429,6 +472,16 @@ Item {
                 highlighted: true
                 font.pixelSize: 17
                 onClicked: plugin.speichern()
+            }
+
+            // --- Diagnose des letzten Speicherns (hilft bei der Fehlersuche im Gelände)
+            Label {
+                Layout.fillWidth: true
+                visible: plugin.diagnose !== ''
+                text: 'Diagnose: ' + plugin.diagnose
+                wrapMode: Text.Wrap
+                font.pixelSize: 11
+                color: plugin.diagnose.indexOf('=false') >= 0 || plugin.diagnose.indexOf('Fehler') >= 0 ? '#a33' : '#6a7a70'
             }
 
             // --- Bereits erfasste Arten der Fläche

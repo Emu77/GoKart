@@ -94,6 +94,18 @@ class Layer(QObject):
     def crs(self):
         return self._crs
 
+    @Property(str, constant=True)
+    def name(self):
+        return self._name
+
+    @Slot(result=bool)
+    def isEditable(self):
+        return self.edit
+
+    @Slot(result='QStringList')
+    def commitErrors(self):
+        return []
+
     @Slot(result=bool)
     def startEditing(self):
         self.edit = True

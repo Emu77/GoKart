@@ -94,7 +94,61 @@ def zusatz_namen(pfad):
     return d
 
 
-def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None):
+def flaechen_quelle(pfad, layername=None):
+    uri = str(pfad) + (f'|layername={layername}' if layername else '')
+    src = QgsVectorLayer(uri, Path(pfad).name + (f' ({layername})' if layername else ''), 'ogr')
+    if not src.isValid():
+        raise SystemExit(f'Flächen-Datei nicht lesbar: {uri}')
+    if QgsWkbTypes.geometryType(src.wkbType()) != QgsWkbTypes.PolygonGeometry:
+        raise SystemExit(f'{uri} enthält keine Polygone.')
+    return src
+
+
+def felder_anzeigen(src):
+    print(f'\nFelder in {src.source()}  ({src.featureCount()} Flächen, {src.crs().authid()}):')
+    beispiel = next(src.getFeatures(), None)
+    for f in src.fields():
+        wert = beispiel[f.name()] if beispiel else ''
+        print(f'  {f.name():30} {f.typeName():12} z. B. {wert}')
+
+
+def flaechen_importieren(fl, src, id_feld, name_feld=None):
+    """Übernimmt Polygone aus src nach fl; flaeche_id = Wert aus id_feld (eindeutig gemacht)."""
+    namen = src.fields().names()
+    for n in (id_feld, name_feld):
+        if n and n not in namen:
+            felder_anzeigen(src)
+            raise SystemExit(f'\nFeld "{n}" gibt es nicht. Bitte eines der obigen Felder angeben.')
+    gesehen, feats, doppelt, leer = {}, [], 0, 0
+    for q in src.getFeatures():
+        if not q.hasGeometry():
+            continue
+        roh = q[id_feld]
+        fid = str(roh).strip() if roh is not None and str(roh) != 'NULL' else ''
+        if not fid:
+            leer += 1
+            fid = f'OHNE-ID-{q.id()}'
+        if fid in gesehen:
+            doppelt += 1
+            gesehen[fid] += 1
+            fid = f'{fid}-{gesehen[fid]}'
+        else:
+            gesehen[fid] = 1
+        f = QgsFeature(fl.fields())
+        name = q[name_feld] if name_feld else None
+        f.setAttributes([fid, None if name is None or str(name) == 'NULL' else str(name), None])
+        g = q.geometry()
+        g.convertToMultiType()
+        f.setGeometry(g)
+        feats.append(f)
+    fl.dataProvider().addFeatures(feats)
+    print(f'Flächen: {len(feats)} übernommen aus {src.name()}'
+          + (f', {doppelt} doppelte IDs mit Suffix -2, -3 …' if doppelt else '')
+          + (f', {leer} ohne ID (OHNE-ID-…)' if leer else ''))
+
+
+def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None):
+    global CRS
     gsl = germansl_namen(germansl)
     zus = zusatz_namen(zusatz)
     quelle = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
@@ -104,11 +158,16 @@ def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None):
     erfasst = quelle.execute('SELECT flaeche_id, taxon_id, erfasst_am, bemerkung, original_spracheingabe FROM flaechen_arten').fetchall()
     quelle.close()
 
-    # --- Flächen
-    fl = speicher_layer('flaechen', [feld('flaeche_id', QVariant.String, 20), feld('name', QVariant.String, 120),
-                                     feld('bemerkung', QVariant.String, 500)], 'Polygon')
+    # --- Flächen (eigene Kartierflächen oder Testflächen)
+    if flaechen:
+        CRS = flaechen['quelle'].crs().authid() or CRS
+    fl = speicher_layer('flaechen', [feld('flaeche_id', QVariant.String, 40), feld('name', QVariant.String, 200),
+                                     feld('bemerkung', QVariant.String, 500)],
+                        'MultiPolygon' if flaechen else 'Polygon')
+    if flaechen:
+        flaechen_importieren(fl, flaechen['quelle'], flaechen['id_feld'], flaechen.get('name_feld'))
     feats = []
-    for fid, name, e, n, b, h in TESTFLAECHEN:
+    for fid, name, e, n, b, h in ([] if flaechen else TESTFLAECHEN):
         f = QgsFeature(fl.fields())
         f.setAttributes([fid, name, 'Testfläche – durch echte Kartierflächen ersetzen'])
         f.setGeometry(QgsGeometry.fromWkt(
@@ -325,26 +384,42 @@ def main():
     ap.add_argument('--zusatz', type=Path, default=Path(__file__).resolve().parent / 'zusatznamen.csv',
                     help='CSV mit eigenen Zusatznamen (wissenschaftlicher_name;name)')
     ap.add_argument('--plugin', type=Path, default=Path(__file__).resolve().parent.parent / 'plugin')
+    ap.add_argument('--flaechen', type=Path, help='eigene Kartierflächen (GPKG/SHP/…, Polygone) statt Testflächen')
+    ap.add_argument('--flaechen-layer', help='Layername innerhalb der Datei (bei GeoPackage mit mehreren Layern)')
+    ap.add_argument('--id-feld', help='Feld mit der eindeutigen Flächen-ID; ohne Angabe werden die Felder angezeigt')
+    ap.add_argument('--name-feld', help='optionales Feld für eine Flächenbezeichnung')
     ap.add_argument('--neu', action='store_true', help='vorhandenes gokart.gpkg überschreiben (Erfassungen gehen verloren!)')
     a = ap.parse_args()
     if not a.db.is_file():
         raise SystemExit(f'Datenbank nicht gefunden: {a.db}')
+    if a.flaechen and not a.flaechen.is_file():
+        raise SystemExit(f'Flächen-Datei nicht gefunden: {a.flaechen}')
     a.ziel.mkdir(parents=True, exist_ok=True)
     gpkg = a.ziel / 'gokart.gpkg'
-    if gpkg.exists() and not a.neu:
-        raise SystemExit(f'{gpkg} existiert bereits. Mit --neu überschreiben (vorher sichern!).')
-    if gpkg.exists():
-        sicherung = gpkg.with_name(f'gokart_{datetime.now():%Y%m%d_%H%M%S}.gpkg.bak')
-        shutil.copy2(gpkg, sicherung)
-        print(f'Sicherung: {sicherung}')
 
     os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
     app = QgsApplication([], False)
     app.initQgis()
+    flaechen = src = None
     try:
-        gpkg_erzeugen(a.db, gpkg, a.germansl, a.zusatz)
+        if a.flaechen:
+            src = flaechen_quelle(a.flaechen, a.flaechen_layer)
+            if not a.id_feld:
+                felder_anzeigen(src)
+                raise SystemExit('\nBitte mit --id-feld <Feldname> (und optional --name-feld) erneut aufrufen.')
+            flaechen = {'quelle': src, 'id_feld': a.id_feld, 'name_feld': a.name_feld}
+        if gpkg.exists() and not a.neu:
+            raise SystemExit(f'{gpkg} existiert bereits. Mit --neu überschreiben (vorher sichern!).')
+        if gpkg.exists():
+            sicherung = gpkg.with_name(f'gokart_{datetime.now():%Y%m%d_%H%M%S}.gpkg.bak')
+            shutil.copy2(gpkg, sicherung)
+            print(f'Sicherung: {sicherung}')
+        gpkg_erzeugen(a.db, gpkg, a.germansl, a.zusatz, flaechen)
         projekt_erzeugen(a.ziel, gpkg)
     finally:
+        flaechen = src = None          # Layer vor exitQgis freigeben, sonst Absturz beim Beenden
+        import gc
+        gc.collect()
         QgsProject.instance().clear()
         app.exitQgis()
 

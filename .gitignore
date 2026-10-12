@@ -41,3 +41,11 @@ qfield_projekt/
 *.qgs~
 qfield/test/mock_qml/
 testdaten.json
+
+# Eigene Kartier-/Biotopdaten nicht veröffentlichen
+*.shp
+*.shx
+*.prj
+*.cpg
+*.qmd
+*.qgz

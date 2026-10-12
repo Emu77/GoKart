@@ -46,7 +46,22 @@ python3 build_gokart_projekt.py \
 Ein vorhandenes `gokart.gpkg` wird nur mit `--neu` überschrieben, vorher wird automatisch eine `.bak`-Sicherung angelegt.
 **Achtung:** Dabei gehen Erfassungen aus dem alten GeoPackage verloren. Vorher vom Gerät zurückholen!
 
-Echte Kartierflächen: in QGIS den Layer `flaechen` bearbeiten. Dabei die Testflächen löschen und für jede Fläche eine eindeutige `flaeche_id` vergeben.
+### Eigene Kartierflächen übernehmen
+
+Statt der Tiergarten-Testflächen kann ein vorhandener Polygon-Layer (Shapefile, GeoPackage …) übernommen werden.
+Das Koordinatensystem der Quelle (z. B. EPSG:25832) wird für Flächen und Projekt übernommen.
+
+```bash
+# 1. Felder anzeigen lassen
+python3 build_gokart_projekt.py --db … --ziel … --flaechen /pfad/biotope.shp
+# 2. mit ID-Feld (und optional Namensfeld) bauen
+python3 build_gokart_projekt.py --db … --germansl … --ziel … \
+  --flaechen /pfad/biotope.shp --id-feld BIOTOP_NR --name-feld BT_TEXT --neu
+```
+Bei GeoPackages mit mehreren Layern zusätzlich `--flaechen-layer <name>` angeben.
+Doppelte IDs bekommen ein Suffix (`-2`, `-3`), Flächen ohne ID heißen `OHNE-ID-<fid>`. Beides meldet das Skript.
+
+Alternativ in QGIS den Layer `flaechen` direkt bearbeiten. Jede Fläche braucht eine eindeutige `flaeche_id`.
 
 ## Tests
 

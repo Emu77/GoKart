@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Controls.Material
 import "gokart_suche.js" as Suche
 
 Item {
@@ -314,6 +315,16 @@ Item {
         y: 16
         padding: 12
         background: Rectangle { color: 'white'; radius: 12 }
+        // QField nutzt ein dunkles Material-Theme -> Dialog explizit hell, sonst weiße Schrift auf Weiß
+        Material.theme: Material.Light
+        Material.accent: plugin.gruen
+        Material.primary: plugin.gruen
+        Material.foreground: '#1c2934'
+        Material.background: 'white'
+        palette.text: '#1c2934'
+        palette.windowText: '#1c2934'
+        palette.buttonText: '#1c2934'
+        palette.base: 'white'
 
         ColumnLayout {
             anchors.fill: parent
@@ -340,8 +351,8 @@ Item {
                     displayText: currentIndex < 0 ? 'Fläche wählen …' : currentText
                     onActivated: function (i) { plugin.flaecheWaehlen(plugin.flaechen[i].id, 'aus Liste'); }
                 }
-                Button { text: '📍 GPS'; onClicked: plugin.flaecheAusGps() }
-                Button { text: '⌖ Karte'; onClicked: plugin.flaecheAusKartenmitte() }
+                Button { text: '📍 GPS'; flat: false; onClicked: plugin.flaecheAusGps() }
+                Button { text: '✛ Karte'; onClicked: plugin.flaecheAusKartenmitte() }
             }
 
             // --- Suche
@@ -386,7 +397,7 @@ Item {
                         Label {
                             Layout.fillWidth: true
                             text: modelData.taxon.deutscher_name || modelData.taxon.wissenschaftlicher_name
-                            font.bold: true; font.pixelSize: 17; elide: Text.ElideRight
+                            font.bold: true; font.pixelSize: 17; elide: Text.ElideRight; color: '#1c2934'
                         }
                         Label {
                             Layout.fillWidth: true
@@ -415,6 +426,7 @@ Item {
                       ? 'Zu ' + (plugin.aktiveFlaeche || '?') + ' hinzufügen: ' + (plugin.ausgewaehlt().taxon.deutscher_name || plugin.ausgewaehlt().taxon.wissenschaftlicher_name)
                       : 'Art auswählen'
                 enabled: plugin.ausgewaehlt() !== null && plugin.aktiveFlaeche !== ''
+                highlighted: true
                 font.pixelSize: 17
                 onClicked: plugin.speichern()
             }
@@ -433,12 +445,12 @@ Item {
                 delegate: RowLayout {
                     required property var modelData
                     width: ListView.view.width
-                    Label { text: modelData.name; Layout.fillWidth: true; elide: Text.ElideRight }
+                    Label { text: modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; color: '#1c2934' }
                     Label { text: modelData.wiss; color: '#6a7a70'; font.italic: true; font.pixelSize: 12; Layout.maximumWidth: 180; elide: Text.ElideRight }
                     Button {
                         id: loeschKnopf
                         property bool sicher: false
-                        text: sicher ? 'Löschen?' : '🗑'
+                        text: sicher ? 'Löschen?' : '✕'
                         flat: true
                         onClicked: { if (sicher) plugin.eintragLoeschen(modelData.fid); else { sicher = true; zurueck.start(); } }
                         Timer { id: zurueck; interval: 3000; onTriggered: loeschKnopf.sicher = false }

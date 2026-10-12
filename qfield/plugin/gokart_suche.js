@@ -165,11 +165,6 @@ function suchen(index, eingabe, anzahl) {
         return String(a.taxon.wissenschaftlicher_name).localeCompare(String(b.taxon.wissenschaftlicher_name));
     }
     liste.sort(sortieren);
-    // Schwache Treffer weglassen, wenn es deutlich bessere gibt
-    if (liste.length) {
-        var grenze = Math.max(450, liste[0].score - 330);
-        liste = liste.filter(function (r) { return r.score >= grenze; });
-    }
     // Eindeutiger Treffer: Arten derselben Gattung als Alternativen nach vorn holen
     if (liste.length && liste[0].exakt && liste[0].taxon.wissenschaftlicher_name) {
         var gattung = String(liste[0].taxon.wissenschaftlicher_name).split(' ')[0] + ' ';
@@ -178,6 +173,11 @@ function suchen(index, eingabe, anzahl) {
                 liste[n].score = Math.max(liste[n].score, 740);
         }
         liste.sort(sortieren);
+    }
+    // Schwache Treffer weglassen, wenn es deutlich bessere gibt
+    if (liste.length) {
+        var grenze = liste[0].exakt ? 700 : Math.max(450, liste[0].score - 330);
+        liste = liste.filter(function (r) { return r.score >= grenze; });
     }
     return liste.slice(0, anzahl);
 }

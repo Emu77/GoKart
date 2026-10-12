@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+vosk-env/
+
+# Vosk-Sprachmodelle
+vosk-model-*/
+
+# Archive und Sicherungen
+*.zip
+*.bak
+
+# Betriebssystem
+.DS_Store
+Thumbs.db
+
+# Temporäre Dateien
+*.tmp
+*.log
+
+# Lokale Konfiguration
+.env
+.env.*
+
+# Ältere Entwicklungsstände
+pflanzen/GoKart_Websuche_v01/
+
+# Externe Pflanzen-Originaldaten
+pflanzen/germansl/
+pflanzen/originaldaten/
+
+# Lokale Datenbanken zunächst nicht veröffentlichen
+*.sqlite
+*.dbf

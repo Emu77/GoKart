@@ -30,6 +30,13 @@ Geplante Funktionen:
 - Experimentelle Offline-Spracherkennung mit Vosk
 - Deutsches Vosk-Sprachmodell
 
+### QField-Prototyp (`qfield/`)
+- QField-Projekt-Plugin (QML): Fläche wählen → Name sprechen/tippen → max. 5 Vorschläge → speichern
+- Fehlertolerante Suche mit Kölner Phonetik (z. B. „kwerkus robur“ → *Quercus robur*)
+- Eigene Synonyme werden beim Erfassen gelernt
+- GeoPackage-Datenmodell: Flächen, Artnachweise, eigene Synonyme, Taxa, Suchnamen
+- Build-Skript (PyQGIS) erzeugt GeoPackage + QGIS-Projekt aus der SQLite-Datenbank und GermanSL
+
 ### Datenhaltung
 - SQLite-Datenbank
 - JavaScript-Pflanzendaten
@@ -42,10 +49,13 @@ Geplante Funktionen:
 - `pflanzen/GoKart_Pflanzen_Datenbank/` – SQLite-Datenbank
 - `pflanzen/originaldaten/` – Ausgangsdaten
 - `pflanzen/sprachtest.py` – Test der Spracherkennung
+- `qfield/plugin/` – QField-Projekt-Plugin (`gokart.qml`, Suchlogik `gokart_suche.js`)
+- `qfield/werkzeuge/` – Projekt-Build (GeoPackage + QGIS-Projekt), Namensaufbereitung
+- `qfield/test/` – Suchtest (Node) und QField-Simulation (PySide6)
 
 ## Technologien
 
-- JavaScript
+- JavaScript / QML
 - HTML5 / CSS3
 - Python
 - SQLite
@@ -56,8 +66,9 @@ Geplante Funktionen:
 
 Das Projekt befindet sich in der Entwicklung.
 
-Die QField-Integration und die Offline-Spracherkennung
-werden schrittweise umgesetzt.
+Ein QField-Prototyp ist vorhanden und in einer Simulation getestet;
+der Test auf echten Geräten (Android-Smartphone, Tablet) steht aus.
+Die Offline-Spracherkennung läuft vorerst über das Diktat der Tastatur.
 
 ## GitHub
 

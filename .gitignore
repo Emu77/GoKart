@@ -34,3 +34,10 @@ pflanzen/originaldaten/
 # Lokale Datenbanken zunächst nicht veröffentlichen
 *.sqlite
 *.dbf
+
+# QField-Prototyp: erzeugte Projekte und Testartefakte
+qfield_projekt/
+*.gpkg
+*.qgs~
+qfield/test/mock_qml/
+testdaten.json

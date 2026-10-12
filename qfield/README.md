@@ -94,7 +94,8 @@ Etwa 30 ms pro Suche am PC.
 
 ## Offen / nächste Schritte
 
-1. **Test in echtem QField (4.x)**. Die Plugin-API ist gegen den QField-Quellcode geprüft und der Ablauf in einer Simulation getestet, aber noch nicht auf dem Gerät gelaufen. Für QField 3.x ist ein Fallback eingebaut, der aber ungetestet ist.
+1. ~~Test in echtem QField~~ – **erledigt 12.10.2026** auf Android-Smartphone (QField 4.x) mit 376 Biotopflächen:
+   Spracheingabe → Vorschlag → Fläche → dauerhaft gespeichert → im Flächenformular sichtbar. Fallback für QField 3.x weiterhin ungetestet.
 2. Dialoghöhe bei eingeblendeter Bildschirmtastatur auf kleinen Displays prüfen
 3. Rückweg: Erfassungen aus `gokart.gpkg` auswerten oder exportieren (z. B. Artenliste je Fläche als CSV)
 4. Optional eigene Offline-Erkennung mit Vosk, falls das Tastatur-Diktat bei botanischen Namen nicht reicht

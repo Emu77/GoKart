@@ -22,6 +22,7 @@ Item {
     property var artenDerFlaeche: []   // [{ fid, name, wiss, taxon_id }]
     property string letzteMeldung: ''
     property string diagnose: ''         // letzter Speicher-Ablauf, wird im Dialog angezeigt
+    property bool diagnoseFehler: false
 
     readonly property color gruen: '#167d50'
     readonly property color gruenHell: '#e6f6eb'
@@ -87,8 +88,9 @@ Item {
         return n;
     }
 
-    function protokoll(text) {
+    function protokoll(text, fehler) {
         diagnose = text;
+        diagnoseFehler = !!fehler;
         console.log('GoKart: ' + text);
         try { iface.logMessage('GoKart: ' + text); } catch (e) {}
     }
@@ -123,7 +125,7 @@ Item {
             } catch (e2) { schritte.push('rollBack-Fehler: ' + e2); }
         }
         schritte.push('danach im Bearbeitungsmodus=' + istEditierbar(lyr));
-        protokoll(lyr.name + ': ' + schritte.join(', '));
+        protokoll(lyr.name + ': ' + schritte.join(', '), !ok);
         return ok;
     }
 
@@ -132,7 +134,7 @@ Item {
         if (!lyr || !istEditierbar(lyr)) return;
         var ok = false;
         try { ok = !!lyr.commitChanges(); } catch (e) {}
-        protokoll(lyr.name + ': offene Änderungen gefunden, gespeichert=' + ok + (ok ? '' : ', Meldung: ' + commitFehler(lyr)));
+        protokoll(lyr.name + ': offene Änderungen gefunden, gespeichert=' + ok + (ok ? '' : ', Meldung: ' + commitFehler(lyr)), !ok);
     }
 
     // ---------------------------------------------------------------- Daten laden
@@ -376,7 +378,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Label { text: 'GoKart · Arterfassung'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true }
-                Button { text: '✕'; flat: true; onClicked: dialog.close() }
+                Button { text: 'Schließen'; flat: true; onClicked: dialog.close() }
             }
 
             // --- Fläche
@@ -395,7 +397,7 @@ Item {
                     onActivated: function (i) { plugin.flaecheWaehlen(plugin.flaechen[i].id, 'aus Liste'); }
                 }
                 Button { text: '📍 GPS'; flat: false; onClicked: plugin.flaecheAusGps() }
-                Button { text: '✛ Karte'; onClicked: plugin.flaecheAusKartenmitte() }
+                Button { text: 'Karte'; onClicked: plugin.flaecheAusKartenmitte() }
             }
 
             // --- Suche
@@ -481,7 +483,7 @@ Item {
                 text: 'Diagnose: ' + plugin.diagnose
                 wrapMode: Text.Wrap
                 font.pixelSize: 11
-                color: plugin.diagnose.indexOf('=false') >= 0 || plugin.diagnose.indexOf('Fehler') >= 0 ? '#a33' : '#6a7a70'
+                color: plugin.diagnoseFehler ? '#a33' : '#6a7a70'
             }
 
             // --- Bereits erfasste Arten der Fläche
@@ -503,7 +505,7 @@ Item {
                     Button {
                         id: loeschKnopf
                         property bool sicher: false
-                        text: sicher ? 'Löschen?' : '✕'
+                        text: sicher ? 'Sicher?' : 'Löschen'
                         flat: true
                         onClicked: { if (sicher) plugin.eintragLoeschen(modelData.fid); else { sicher = true; zurueck.start(); } }
                         Timer { id: zurueck; interval: 3000; onTriggered: loeschKnopf.sicher = false }

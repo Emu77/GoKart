@@ -59,6 +59,10 @@ python3 build_gokart_projekt.py --db … --germansl … --ziel … \
   --flaechen /pfad/biotope.shp --id-feld BIOTOP_NR --name-feld BT_TEXT --neu
 ```
 Bei GeoPackages mit mehreren Layern zusätzlich `--flaechen-layer <name>` angeben.
+
+Gibt es kein eindeutiges ID-Feld, nummeriert `--id-auto K6-` die Flächen fortlaufend (`K6-001`, `K6-002` …,
+Reihenfolge wie in der Quelldatei). **Achtung:** Wird die Quelldatei später verändert und das Projekt neu gebaut,
+können sich die Nummern verschieben. Für dauerhafte Arbeit besser ein eindeutiges ID-Feld in der Quelle pflegen.
 Doppelte IDs bekommen ein Suffix (`-2`, `-3`), Flächen ohne ID heißen `OHNE-ID-<fid>`. Beides meldet das Skript.
 
 Alternativ in QGIS den Layer `flaechen` direkt bearbeiten. Jede Fläche braucht eine eindeutige `flaeche_id`.

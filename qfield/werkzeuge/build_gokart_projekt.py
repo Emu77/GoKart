@@ -112,19 +112,31 @@ def felder_anzeigen(src):
         print(f'  {f.name():30} {f.typeName():12} z. B. {wert}')
 
 
-def flaechen_importieren(fl, src, id_feld, name_feld=None):
-    """Übernimmt Polygone aus src nach fl; flaeche_id = Wert aus id_feld (eindeutig gemacht)."""
+def id_text(wert):
+    """Feldwert als ID-Text; 2773.0 -> '2773'."""
+    if wert is None or str(wert) == 'NULL':
+        return ''
+    if isinstance(wert, float) and wert.is_integer():
+        return str(int(wert))
+    return str(wert).strip()
+
+
+def flaechen_importieren(fl, src, id_feld=None, name_feld=None, id_auto=None):
+    """Übernimmt Polygone aus src nach fl.
+    flaeche_id = Wert aus id_feld (eindeutig gemacht) oder bei id_auto fortlaufend: <Präfix>0001 …"""
     namen = src.fields().names()
     for n in (id_feld, name_feld):
         if n and n not in namen:
             felder_anzeigen(src)
             raise SystemExit(f'\nFeld "{n}" gibt es nicht. Bitte eines der obigen Felder angeben.')
     gesehen, feats, doppelt, leer = {}, [], 0, 0
-    for q in src.getFeatures():
+    breite = max(3, len(str(src.featureCount())))
+    nummer = 0
+    for q in sorted(src.getFeatures(), key=lambda x: x.id()):
         if not q.hasGeometry():
             continue
-        roh = q[id_feld]
-        fid = str(roh).strip() if roh is not None and str(roh) != 'NULL' else ''
+        nummer += 1
+        fid = f'{id_auto}{nummer:0{breite}d}' if id_auto is not None else id_text(q[id_feld])
         if not fid:
             leer += 1
             fid = f'OHNE-ID-{q.id()}'
@@ -136,7 +148,7 @@ def flaechen_importieren(fl, src, id_feld, name_feld=None):
             gesehen[fid] = 1
         f = QgsFeature(fl.fields())
         name = q[name_feld] if name_feld else None
-        f.setAttributes([fid, None if name is None or str(name) == 'NULL' else str(name), None])
+        f.setAttributes([fid, id_text(name) or None, None])
         g = q.geometry()
         g.convertToMultiType()
         f.setGeometry(g)
@@ -165,7 +177,8 @@ def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None):
                                      feld('bemerkung', QVariant.String, 500)],
                         'MultiPolygon' if flaechen else 'Polygon')
     if flaechen:
-        flaechen_importieren(fl, flaechen['quelle'], flaechen['id_feld'], flaechen.get('name_feld'))
+        flaechen_importieren(fl, flaechen['quelle'], flaechen.get('id_feld'), flaechen.get('name_feld'),
+                             flaechen.get('id_auto'))
     feats = []
     for fid, name, e, n, b, h in ([] if flaechen else TESTFLAECHEN):
         f = QgsFeature(fl.fields())
@@ -387,6 +400,8 @@ def main():
     ap.add_argument('--flaechen', type=Path, help='eigene Kartierflächen (GPKG/SHP/…, Polygone) statt Testflächen')
     ap.add_argument('--flaechen-layer', help='Layername innerhalb der Datei (bei GeoPackage mit mehreren Layern)')
     ap.add_argument('--id-feld', help='Feld mit der eindeutigen Flächen-ID; ohne Angabe werden die Felder angezeigt')
+    ap.add_argument('--id-auto', metavar='PRÄFIX',
+                    help='Flächen fortlaufend nummerieren statt --id-feld, z. B. --id-auto K6- ergibt K6-001, K6-002 …')
     ap.add_argument('--name-feld', help='optionales Feld für eine Flächenbezeichnung')
     ap.add_argument('--neu', action='store_true', help='vorhandenes gokart.gpkg überschreiben (Erfassungen gehen verloren!)')
     a = ap.parse_args()
@@ -404,10 +419,11 @@ def main():
     try:
         if a.flaechen:
             src = flaechen_quelle(a.flaechen, a.flaechen_layer)
-            if not a.id_feld:
+            if not a.id_feld and a.id_auto is None:
                 felder_anzeigen(src)
-                raise SystemExit('\nBitte mit --id-feld <Feldname> (und optional --name-feld) erneut aufrufen.')
-            flaechen = {'quelle': src, 'id_feld': a.id_feld, 'name_feld': a.name_feld}
+                raise SystemExit('\nBitte mit --id-feld <Feldname> oder --id-auto <Präfix> (und optional --name-feld) '
+                                 'erneut aufrufen.')
+            flaechen = {'quelle': src, 'id_feld': a.id_feld, 'name_feld': a.name_feld, 'id_auto': a.id_auto}
         if gpkg.exists() and not a.neu:
             raise SystemExit(f'{gpkg} existiert bereits. Mit --neu überschreiben (vorher sichern!).')
         if gpkg.exists():

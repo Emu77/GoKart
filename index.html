@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoKart · Pflanzensuche</title><link rel="stylesheet" href="style.css"></head>
+<body><main><header><span class="brand">GoKart</span><span class="tag">Pflanzenkartierung · Prototyp</span></header>
+<h1>Pflanzenart auswählen</h1><p class="hint">Offline-Suche in deutschen und wissenschaftlichen Pflanzennamen, inklusive Synonymen.</p>
+<section class="panel"><label for="flaeche">Aktive Fläche (Testkennung)</label><input id="flaeche" placeholder="z. B. F-001" autocomplete="off">
+<label for="suche">Pflanzenname</label><input id="suche" placeholder="z. B. Stiel Eiche" autofocus autocomplete="off"><p id="status" role="status" aria-live="polite"></p>
+<button type="button" id="mikrofonButton">
+  🎤 Pflanzennamen sprechen
+</button>
+<p id="sprachStatus"></p>
+<div id="treffer" class="results" role="listbox" aria-label="Pflanzenvorschläge"></div>
+<div class="actions"><button id="hinzufuegen" disabled>Zur Fläche hinzufügen</button><button id="leeren" class="secondary">Auswahl löschen</button></div></section>
+<section class="panel"><h2>Erfasste Pflanzen (lokaler Test)</h2><p class="hint">Diese Testeinträge werden nur im Browser gespeichert, nicht in QField oder SQLite.</p><div id="erfasst"></div><button id="export" class="secondary">Testdaten als JSON exportieren</button></section>
+<footer>GoKart · lokale Browser-Demo · keine Sprachaufnahme und noch keine QField-Anbindung</footer></main>
+<script src="pflanzendaten.js"></script>
+<script src="pflanzensuche.js"></script>
+<script src="spracheingabe.js"></script>
+</body>
+</html>9

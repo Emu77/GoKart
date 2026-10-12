@@ -1,0 +1,1735 @@
+From 767b823e4e06bb9d942703e492edc2f5a60334a2 Mon Sep 17 00:00:00 2001
+From: Emu1977 <e.kronas@kronisoft.net>
+Date: Mon, 12 Oct 2026 11:44:03 +0200
+Subject: [PATCH] QField-Prototyp: Projekt-Plugin, Build-Skript und Tests
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- QField-Projekt-Plugin gokart.qml: Fläche wählen (Liste/GPS/Kartenmitte),
+  Pflanzennamen sprechen/tippen, max. 5 Vorschläge, Artnachweis speichern,
+  eigene Synonyme lernen
+- Fehlertolerante Suche mit Kölner Phonetik und Levenshtein (gokart_suche.js)
+- build_gokart_projekt.py erzeugt GeoPackage + QGIS-Projekt (Relation
+  Fläche -> Artnachweise) aus GoKart_Pflanzen.sqlite, ergänzt 499 fehlende
+  deutsche Namen aus GermanSL
+- Tests: Suchtest mit Echtdaten (Node), QField-Simulation (PySide6)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017i6s6z9D1ATaopTsXASEzw
+---
+ .gitignore                               |   7 +
+ README.md                                |  17 +-
+ qfield/README.md                         |  82 +++++
+ qfield/plugin/gokart.qml                 | 450 +++++++++++++++++++++++
+ qfield/plugin/gokart_icon.svg            |   1 +
+ qfield/plugin/gokart_suche.js            | 190 ++++++++++
+ qfield/test/qml_harness.py               | 347 +++++++++++++++++
+ qfield/test/test_suche.js                |  31 ++
+ qfield/test/testdaten_export.py          |  10 +
+ qfield/werkzeuge/build_gokart_projekt.py | 361 ++++++++++++++++++
+ qfield/werkzeuge/gokart_namen.py         |  87 +++++
+ qfield/werkzeuge/zusatznamen.csv         |   9 +
+ 12 files changed, 1589 insertions(+), 3 deletions(-)
+ create mode 100644 qfield/README.md
+ create mode 100644 qfield/plugin/gokart.qml
+ create mode 100644 qfield/plugin/gokart_icon.svg
+ create mode 100644 qfield/plugin/gokart_suche.js
+ create mode 100644 qfield/test/qml_harness.py
+ create mode 100644 qfield/test/test_suche.js
+ create mode 100644 qfield/test/testdaten_export.py
+ create mode 100644 qfield/werkzeuge/build_gokart_projekt.py
+ create mode 100644 qfield/werkzeuge/gokart_namen.py
+ create mode 100644 qfield/werkzeuge/zusatznamen.csv
+
+diff --git a/.gitignore b/.gitignore
+index 481c86c..512ef7c 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -34,3 +34,10 @@ pflanzen/originaldaten/
+ # Lokale Datenbanken zunächst nicht veröffentlichen
+ *.sqlite
+ *.dbf
++
++# QField-Prototyp: erzeugte Projekte und Testartefakte
++qfield_projekt/
++*.gpkg
++*.qgs~
++qfield/test/mock_qml/
++testdaten.json
+diff --git a/README.md b/README.md
+index d25ab3c..e7e404c 100644
+--- a/README.md
++++ b/README.md
+@@ -30,6 +30,13 @@ Geplante Funktionen:
+ - Experimentelle Offline-Spracherkennung mit Vosk
+ - Deutsches Vosk-Sprachmodell
+ 
++### QField-Prototyp (`qfield/`)
++- QField-Projekt-Plugin (QML): Fläche wählen → Name sprechen/tippen → max. 5 Vorschläge → speichern
++- Fehlertolerante Suche mit Kölner Phonetik (z. B. „kwerkus robur“ → *Quercus robur*)
++- Eigene Synonyme werden beim Erfassen gelernt
++- GeoPackage-Datenmodell: Flächen, Artnachweise, eigene Synonyme, Taxa, Suchnamen
++- Build-Skript (PyQGIS) erzeugt GeoPackage + QGIS-Projekt aus der SQLite-Datenbank und GermanSL
++
+ ### Datenhaltung
+ - SQLite-Datenbank
+ - JavaScript-Pflanzendaten
+@@ -42,10 +49,13 @@ Geplante Funktionen:
+ - `pflanzen/GoKart_Pflanzen_Datenbank/` – SQLite-Datenbank
+ - `pflanzen/originaldaten/` – Ausgangsdaten
+ - `pflanzen/sprachtest.py` – Test der Spracherkennung
++- `qfield/plugin/` – QField-Projekt-Plugin (`gokart.qml`, Suchlogik `gokart_suche.js`)
++- `qfield/werkzeuge/` – Projekt-Build (GeoPackage + QGIS-Projekt), Namensaufbereitung
++- `qfield/test/` – Suchtest (Node) und QField-Simulation (PySide6)
+ 
+ ## Technologien
+ 
+-- JavaScript
++- JavaScript / QML
+ - HTML5 / CSS3
+ - Python
+ - SQLite
+@@ -56,8 +66,9 @@ Geplante Funktionen:
+ 
+ Das Projekt befindet sich in der Entwicklung.
+ 
+-Die QField-Integration und die Offline-Spracherkennung
+-werden schrittweise umgesetzt.
++Ein QField-Prototyp ist vorhanden und in einer Simulation getestet;
++der Test auf echten Geräten (Android-Smartphone, Tablet) steht aus.
++Die Offline-Spracherkennung läuft vorerst über das Diktat der Tastatur.
+ 
+ ## GitHub
+ 
+diff --git a/qfield/README.md b/qfield/README.md
+new file mode 100644
+index 0000000..3ee04c2
+--- /dev/null
++++ b/qfield/README.md
+@@ -0,0 +1,82 @@
++# GoKart – QField-Prototyp (Stand 12.10.2026)
++
++Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen oder tippen → aus max. 5 Vorschlägen wählen → speichern.**
++
++## Inhalt
++
++| Ordner / Datei | Zweck |
++|---|---|
++| `qfield_projekt/` | *wird erzeugt* (nicht im Repo): `gokart.qgs`, `gokart.gpkg`, Plugin `gokart.qml` + `gokart_suche.js` + Icon |
++| `plugin/` | Quellcode des QField-Projekt-Plugins |
++| `werkzeuge/build_gokart_projekt.py` | Erzeugt GeoPackage + QGIS-Projekt aus `GoKart_Pflanzen.sqlite` (+ GermanSL) |
++| `werkzeuge/gokart_namen.py` | Aufbereitung der deutschen Namen (z. B. „Eiche (Unterart), Stiel-“ → „Stiel-Eiche“) |
++| `werkzeuge/zusatznamen.csv` | Eigene gebräuchliche Namen, z. B. Rot-Klee → *Trifolium pratense* |
++| `test/test_suche.js` | Suchtest mit Echtdaten (32 Fälle, alle bestanden) |
++| `test/qml_harness.py` | Simuliert QField und spielt den kompletten Ablauf mit dem Plugin durch |
++
++## Datenmodell (`gokart.gpkg`, EPSG:25833)
++
++- `flaechen` (Polygon): `flaeche_id` (eindeutig), `name`, `bemerkung` – 3 Testflächen im Tiergarten
++- `artnachweise`: `flaeche_id`, `taxon_id`, Namen, `original_eingabe`, `erfasst_am`, `bemerkung`
++- `eigene_synonyme`: `taxon_id`, `synonym`, `schluessel` (entsteht beim Erfassen)
++- `taxon` (6.101) und `suchnamen` (15.649): Referenz, schreibgeschützt
++- Relation: Fläche 1:n Artnachweise → im Flächenformular gibt es den Reiter „Arten“
++
++## Auf dem Gerät nutzen (SHIFTphone / Tablet)
++
++1. Projekt bauen (siehe unten), den Ordner `qfield_projekt` als ZIP packen, aufs Gerät kopieren und in QField als Projekt importieren (oder den Ordner direkt in den QField-Projektordner kopieren).
++2. `gokart.qgs` öffnen und die Nachfrage, ob das **Projekt-Plugin** geladen werden darf, bestätigen.
++3. Den grünen Blatt-Knopf in der Plugin-Leiste antippen.
++4. Fläche wählen: Liste, **📍 GPS** (Position liegt in der Fläche) oder **⌖ Karte** (Kartenmitte – praktisch im Emulator).
++5. Ins Namensfeld tippen und das **Mikrofon der Tastatur** nutzen. Bei genau einem eindeutigen Treffer ist dieser schon ausgewählt, dann reicht **Enter**.
++6. Wenn die Eingabe kein bekannter Name war (z. B. „Stil Eiche“), kannst du sie per Häkchen als **eigenes Synonym** speichern. Danach wird sie exakt erkannt.
++
++**Spracheingabe offline:** Die Tastatur muss offline diktieren können, z. B. mit FUTO Keyboard (FUTO Voice Input) oder Gboard mit heruntergeladenem Offline-Sprachpaket Deutsch. Das Plugin selbst braucht keine Internetverbindung, nur die OSM-Hintergrundkarte.
++
++## Projekt neu bauen (Ubuntu 24.04)
++
++```bash
++sudo apt install python3-qgis qgis-providers
++cd GoKart/qfield/werkzeuge
++python3 build_gokart_projekt.py \
++  --db /media/emu/daten/gpb/GoKart/pflanzen/GoKart_Pflanzen_Datenbank/GoKart_Pflanzen.sqlite \
++  --germansl "/media/emu/daten/gpb/GoKart/pflanzen/germansl/GermanSL 1.5/germansl.sqlite" \
++  --ziel /media/emu/daten/gpb/GoKart/qfield_projekt
++```
++Ein vorhandenes `gokart.gpkg` wird nur mit `--neu` überschrieben, vorher wird automatisch eine `.bak`-Sicherung angelegt.
++**Achtung:** Dabei gehen Erfassungen aus dem alten GeoPackage verloren. Vorher vom Gerät zurückholen!
++
++Echte Kartierflächen: in QGIS den Layer `flaechen` bearbeiten. Dabei die Testflächen löschen und für jede Fläche eine eindeutige `flaeche_id` vergeben.
++
++## Tests
++
++```bash
++python3 test/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json
++node test/test_suche.js testdaten.json
++QT_QPA_PLATFORM=offscreen python3 test/qml_harness.py qfield_projekt_kopie
++```
++`qml_harness.py` schreibt in das GeoPackage, deshalb nur mit einer **Kopie** ausführen. Benötigt: `pip install PySide6-Essentials`.
++
++## Suche – wie sie funktioniert
++
++1. Normalisieren: Kleinschreibung, ä→a, ß→ss, Leer- und Bindestriche entfernen („Stiel Eiche“ = „Stiel-Eiche“)
++2. Exakt → Wortanfang → enthalten
++3. **Kölner Phonetik** gegen Hör- und Erkennungsfehler („kwerkus robur“ → *Quercus robur*, „Spitzwegerisch“ → Spitz-Wegerich)
++4. Levenshtein bei Tippfehlern
++5. Gewichtung: eigenes Synonym > deutscher Name > wissenschaftlich > botanisches Synonym; bei Gleichstand Art vor Unterart vor Aggregat vor Gattung
++
++Etwa 30 ms pro Suche am PC.
++
++## Datenkorrekturen in diesem Schritt
++
++- **499 fehlende deutsche Namen** aus GermanSL ergänzt (z. B. Feld-Ahorn, Sumpfdotterblume, Breitblättriger Wegerich)
++- Umgedrehte BfN-Namen aufgelöst: „Herbstaster, Glatte“ → „Glatte Herbstaster“, „Eiche (Unterart), Stiel-“ → „Stiel-Eiche“
++- 42 wissenschaftliche Namen kommen doppelt vor (s. l. / s. str., z. B. *Urtica dioica*). Damit man sie unterscheiden kann, zeigt die Trefferliste den vollen Namen mit Autor.
++
++## Offen / nächste Schritte
++
++1. **Test in echtem QField (4.x)**. Die Plugin-API ist gegen den QField-Quellcode geprüft und der Ablauf in einer Simulation getestet, aber noch nicht auf dem Gerät gelaufen. Für QField 3.x ist ein Fallback eingebaut, der aber ungetestet ist.
++2. Dialoghöhe bei eingeblendeter Bildschirmtastatur auf kleinen Displays prüfen
++3. Rückweg: Erfassungen aus `gokart.gpkg` auswerten oder exportieren (z. B. Artenliste je Fläche als CSV)
++4. Optional eigene Offline-Erkennung mit Vosk, falls das Tastatur-Diktat bei botanischen Namen nicht reicht
++5. Echte Kartierflächen und Flächen-IDs übernehmen
+diff --git a/qfield/plugin/gokart.qml b/qfield/plugin/gokart.qml
+new file mode 100644
+index 0000000..42ab31e
+--- /dev/null
++++ b/qfield/plugin/gokart.qml
+@@ -0,0 +1,450 @@
++// GoKart – QField-Projekt-Plugin: Pflanzenarten per Sprache/Tastatur suchen und einer Fläche zuordnen
++// Datei MUSS so heißen wie das Projekt (gokart.qgs -> gokart.qml) und daneben liegen.
++// Getestet gegen die API von QField 4.x; QField 3.x wird über einen Fallback unterstützt.
++import QtQuick
++import QtQuick.Controls
++import QtQuick.Layouts
++import "gokart_suche.js" as Suche
++
++Item {
++    id: plugin
++
++    // --- Zustand
++    property var lu: null              // LayerUtils / QfLayerUtils
++    property var fu: null              // FeatureUtils / QfFeatureUtils
++    property var index: null
++    property bool laedt: false
++    property var treffer: []
++    property int auswahlIndex: -1
++    property var flaechen: []          // [{ id, name }]
++    property string aktiveFlaeche: ''
++    property var artenDerFlaeche: []   // [{ fid, name, wiss, taxon_id }]
++    property string letzteMeldung: ''
++
++    readonly property color gruen: '#167d50'
++    readonly property color gruenHell: '#e6f6eb'
++
++    Component.onCompleted: {
++        if (!apiLaden()) {
++            meldung('GoKart: QField-API nicht gefunden – Plugin inaktiv.');
++            return;
++        }
++        iface.addItemToPluginsToolbar(gokartKnopf);
++    }
++
++    // ---------------------------------------------------------------- Hilfsfunktionen
++    function meldung(text) {
++        letzteMeldung = text;
++        try { iface.mainWindow().displayToast(text); } catch (e) { console.log(text); }
++    }
++
++    // QField 4.x: org.qfield.core / QfLayerUtils – QField 3.x: org.qfield / LayerUtils
++    function apiLaden() {
++        var varianten = [
++            'import QtQuick; import org.qfield.core; QtObject { property var lu: QfLayerUtils; property var fu: QfFeatureUtils }',
++            'import QtQuick; import org.qfield; QtObject { property var lu: LayerUtils; property var fu: FeatureUtils }'
++        ];
++        for (var i = 0; i < varianten.length; i++) {
++            try {
++                var o = Qt.createQmlObject(varianten[i], plugin, 'gokartApi' + i);
++                if (o && o.lu && o.fu) { lu = o.lu; fu = o.fu; return true; }
++            } catch (e) { /* nächste Variante */ }
++        }
++        return false;
++    }
++
++    function ebene(name) {
++        var l = qgisProject.mapLayersByName(name);
++        return (l && l.length) ? l[0] : null;
++    }
++
++    function textSql(s) { return "'" + String(s).replace(/'/g, "''") + "'"; }
++
++    function jetzt() {
++        var d = new Date();
++        function z(n) { return (n < 10 ? '0' : '') + n; }
++        return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T' +
++               z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds());
++    }
++
++    function attr(f, name) {
++        var v = f.attribute(name);
++        return (v === undefined || v === null || String(v) === 'NULL') ? null : v;
++    }
++
++    function setze(f, lyr, name, wert) {
++        var i = lyr.fields.indexFromName(name);
++        if (i >= 0) f.setAttribute(i, wert);
++    }
++
++    function alleFeatures(lyr, ausdruck, je) {
++        var it = ausdruck ? lu.createFeatureIteratorFromExpression(lyr, ausdruck) : lu.createFeatureIterator(lyr);
++        var n = 0;
++        while (it.hasNext()) { je(it.next()); n++; }
++        it.close();
++        return n;
++    }
++
++    function inBearbeitung(lyr, aktion) {
++        lyr.startEditing();
++        var ok = false;
++        try { ok = aktion(); } catch (e) { console.log('GoKart: ' + e); ok = false; }
++        if (ok) ok = lyr.commitChanges();
++        if (!ok) { try { lyr.rollBack(); } catch (e2) {} }
++        return ok;
++    }
++
++    // ---------------------------------------------------------------- Daten laden
++    function indexLaden() {
++        var tx = ebene('taxon'), sn = ebene('suchnamen'), es = ebene('eigene_synonyme');
++        if (!tx || !sn) { meldung('GoKart: Layer "taxon"/"suchnamen" fehlen im Projekt.'); return false; }
++        var idx = Suche.neuerIndex();
++        alleFeatures(tx, null, function (f) {
++            Suche.taxonHinzufuegen(idx, {
++                taxon_id: attr(f, 'taxon_id'),
++                wissenschaftlicher_name: attr(f, 'wissenschaftlicher_name'),
++                deutscher_name: attr(f, 'anzeige_name') || attr(f, 'deutscher_name'),
++                rang: attr(f, 'rang'),
++                voller_name: attr(f, 'autor_name')
++            });
++        });
++        alleFeatures(sn, null, function (f) {
++            Suche.nameHinzufuegen(idx, attr(f, 'taxon_id'), attr(f, 'name'), attr(f, 'art'), attr(f, 'schluessel'));
++        });
++        if (es) alleFeatures(es, null, function (f) {
++            Suche.nameHinzufuegen(idx, attr(f, 'taxon_id'), attr(f, 'synonym'), 'eigen');
++        });
++        index = idx;
++        return true;
++    }
++
++    function flaechenLaden() {
++        var fl = ebene('flaechen');
++        var liste = [];
++        if (fl) alleFeatures(fl, null, function (f) {
++            var id = attr(f, 'flaeche_id');
++            if (id) liste.push({ id: String(id), name: attr(f, 'name') || '' });
++        });
++        liste.sort(function (a, b) { return a.id.localeCompare(b.id); });
++        flaechen = liste;
++        if (!aktiveFlaeche && liste.length === 1) aktiveFlaeche = liste[0].id;
++    }
++
++    function artenLaden() {
++        var an = ebene('artnachweise');
++        var liste = [];
++        if (an && aktiveFlaeche) {
++            alleFeatures(an, '"flaeche_id" = ' + textSql(aktiveFlaeche), function (f) {
++                liste.push({ fid: f.id, taxon_id: attr(f, 'taxon_id'),
++                             name: attr(f, 'deutscher_name') || attr(f, 'wissenschaftlicher_name') || '?',
++                             wiss: attr(f, 'wissenschaftlicher_name') || '', am: attr(f, 'erfasst_am') || '' });
++            });
++            liste.sort(function (a, b) { return String(b.am).localeCompare(String(a.am)); });
++        }
++        artenDerFlaeche = liste;
++    }
++
++    // ---------------------------------------------------------------- Fläche bestimmen
++    function flaecheAnPunkt(x, y, crsAuthid) {
++        var fl = ebene('flaechen');
++        if (!fl) return null;
++        var ziel = 'EPSG:25833';
++        try { if (fl.crs && fl.crs.authid) ziel = fl.crs.authid; } catch (e) {}
++        var expr = "intersects($geometry, transform(make_point(" + Number(x) + ", " + Number(y) + "), " +
++                   textSql(crsAuthid) + ", " + textSql(ziel) + "))";
++        var gefunden = null;
++        alleFeatures(fl, expr, function (f) { if (!gefunden) gefunden = attr(f, 'flaeche_id'); });
++        return gefunden;
++    }
++
++    function flaecheWaehlen(id, quelle) {
++        if (!id) { meldung('Keine Fläche ' + quelle + ' gefunden.'); return; }
++        aktiveFlaeche = String(id);
++        artenLaden();
++        meldung('Aktive Fläche: ' + aktiveFlaeche + ' (' + quelle + ')');
++    }
++
++    function flaecheAusGps() {
++        var pos = null;
++        try { var p = iface.positioning(); if (p) pos = p.positionInformation; } catch (e) {}
++        if (!pos) {
++            try { var ps = iface.findItemByObjectName('positionSource'); if (ps) pos = ps.positionInformation; } catch (e2) {}
++        }
++        if (!pos || !pos.latitudeValid || !pos.longitudeValid) { meldung('Keine gültige GPS-Position.'); return; }
++        flaecheWaehlen(flaecheAnPunkt(pos.longitude, pos.latitude, 'EPSG:4326'), 'per GPS');
++    }
++
++    function flaecheAusKartenmitte() {
++        try {
++            var ms = iface.mapCanvas().mapSettings;
++            var c = ms.center;
++            flaecheWaehlen(flaecheAnPunkt(c.x, c.y, ms.destinationCrs.authid), 'in Kartenmitte');
++        } catch (e) { meldung('Kartenmitte nicht ermittelbar: ' + e); }
++    }
++
++    // ---------------------------------------------------------------- Suche & Speichern
++    function suchen(text) {
++        if (!index) return;
++        var t = Suche.suchen(index, text, 5);
++        treffer = t;
++        // Genau ein exakter Treffer -> gleich vorauswählen (schneller Ablauf beim Diktieren)
++        var exakte = t.filter(function (r) { return r.exakt; });
++        auswahlIndex = (exakte.length === 1) ? t.indexOf(exakte[0]) : -1;
++    }
++
++    function ausgewaehlt() { return (auswahlIndex >= 0 && auswahlIndex < treffer.length) ? treffer[auswahlIndex] : null; }
++
++    function speichern() {
++        var r = ausgewaehlt();
++        if (!r) { meldung('Bitte zuerst eine Art auswählen.'); return; }
++        if (!aktiveFlaeche) { meldung('Bitte zuerst eine Fläche wählen.'); return; }
++        var an = ebene('artnachweise');
++        if (!an) { meldung('Layer "artnachweise" fehlt.'); return; }
++
++        var schonDa = 0;
++        alleFeatures(an, '"flaeche_id" = ' + textSql(aktiveFlaeche) + ' AND "taxon_id" = ' + Number(r.id), function () { schonDa++; });
++        var anzeige = r.taxon.deutscher_name || r.taxon.wissenschaftlicher_name;
++        if (schonDa > 0) { meldung(anzeige + ' ist auf ' + aktiveFlaeche + ' bereits erfasst.'); eingabeLeeren(); return; }
++
++        var eingabe = sucheFeld.text;
++        var ok = inBearbeitung(an, function () {
++            var f = fu.createFeature(an);
++            setze(f, an, 'flaeche_id', aktiveFlaeche);
++            setze(f, an, 'taxon_id', Number(r.id));
++            setze(f, an, 'wissenschaftlicher_name', r.taxon.wissenschaftlicher_name);
++            setze(f, an, 'deutscher_name', r.taxon.deutscher_name);
++            setze(f, an, 'original_eingabe', eingabe);
++            setze(f, an, 'erfasst_am', jetzt());
++            return lu.addFeature(an, f);
++        });
++        if (!ok) { meldung('Speichern fehlgeschlagen.'); return; }
++
++        if (synonymMerken.visible && synonymMerken.checked) synonymSpeichern(r.id, eingabe);
++        meldung('✔ ' + anzeige + ' → ' + aktiveFlaeche);
++        artenLaden();
++        eingabeLeeren();
++    }
++
++    function synonymSpeichern(taxonId, text) {
++        var es = ebene('eigene_synonyme');
++        var t = String(text).trim();
++        if (!es || !t) return;
++        var ok = inBearbeitung(es, function () {
++            var f = fu.createFeature(es);
++            setze(f, es, 'taxon_id', Number(taxonId));
++            setze(f, es, 'synonym', t);
++            setze(f, es, 'schluessel', Suche.normalisieren(t));
++            setze(f, es, 'angelegt_am', jetzt());
++            return lu.addFeature(es, f);
++        });
++        if (ok) Suche.nameHinzufuegen(index, taxonId, t, 'eigen');
++    }
++
++    function eintragLoeschen(fid) {
++        var an = ebene('artnachweise');
++        if (!an) return;
++        var ok = inBearbeitung(an, function () { return lu.deleteFeature(qgisProject, an, fid, false); });
++        meldung(ok ? 'Eintrag gelöscht.' : 'Löschen fehlgeschlagen.');
++        artenLaden();
++    }
++
++    function eingabeLeeren() {
++        sucheFeld.text = '';
++        treffer = [];
++        auswahlIndex = -1;
++        synonymMerken.checked = false;
++        sucheFeld.forceActiveFocus();
++    }
++
++    function oeffnen() {
++        dialog.open();
++        if (!index && !laedt) {
++            laedt = true;
++            ladeTimer.start();   // UI zuerst zeichnen, dann laden
++        } else {
++            flaechenLaden();
++            artenLaden();
++            sucheFeld.forceActiveFocus();
++        }
++    }
++
++    Timer {
++        id: ladeTimer
++        interval: 50
++        onTriggered: {
++            var t0 = Date.now();
++            var ok = indexLaden();
++            flaechenLaden();
++            artenLaden();
++            laedt = false;
++            if (ok) meldung('GoKart: ' + Object.keys(index.taxa).length + ' Taxa geladen (' + (Date.now() - t0) + ' ms)');
++            sucheFeld.forceActiveFocus();
++        }
++    }
++
++    Timer {
++        id: suchTimer
++        interval: 250
++        onTriggered: suchen(sucheFeld.text)
++    }
++
++    // ---------------------------------------------------------------- Toolbar-Knopf
++    RoundButton {
++        id: gokartKnopf
++        width: 48
++        height: 48
++        icon.source: Qt.resolvedUrl('gokart_icon.svg')
++        icon.color: 'white'
++        icon.width: 24
++        icon.height: 24
++        background: Rectangle { radius: width / 2; color: plugin.gruen }
++        onClicked: plugin.oeffnen()
++    }
++
++    // ---------------------------------------------------------------- Erfassungsdialog
++    Popup {
++        id: dialog
++        parent: iface.mainWindow().contentItem
++        modal: true
++        focus: true
++        closePolicy: Popup.CloseOnEscape
++        width: Math.min(parent.width - 16, 640)
++        height: parent.height - 32
++        x: (parent.width - width) / 2
++        y: 16
++        padding: 12
++        background: Rectangle { color: 'white'; radius: 12 }
++
++        ColumnLayout {
++            anchors.fill: parent
++            spacing: 8
++
++            RowLayout {
++                Layout.fillWidth: true
++                Label { text: 'GoKart · Arterfassung'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true }
++                Button { text: '✕'; flat: true; onClicked: dialog.close() }
++            }
++
++            // --- Fläche
++            Label { text: 'Fläche'; font.bold: true }
++            RowLayout {
++                Layout.fillWidth: true
++                ComboBox {
++                    id: flaechenAuswahl
++                    Layout.fillWidth: true
++                    model: plugin.flaechen.map(function (f) { return f.name ? f.id + ' – ' + f.name : f.id; })
++                    currentIndex: {
++                        for (var i = 0; i < plugin.flaechen.length; i++) if (plugin.flaechen[i].id === plugin.aktiveFlaeche) return i;
++                        return -1;
++                    }
++                    displayText: currentIndex < 0 ? 'Fläche wählen …' : currentText
++                    onActivated: function (i) { plugin.flaecheWaehlen(plugin.flaechen[i].id, 'aus Liste'); }
++                }
++                Button { text: '📍 GPS'; onClicked: plugin.flaecheAusGps() }
++                Button { text: '⌖ Karte'; onClicked: plugin.flaecheAusKartenmitte() }
++            }
++
++            // --- Suche
++            Label { text: 'Pflanzenname'; font.bold: true }
++            TextField {
++                id: sucheFeld
++                objectName: 'gokartSucheFeld'
++                Layout.fillWidth: true
++                font.pixelSize: 20
++                placeholderText: plugin.laedt ? 'Pflanzendaten werden geladen …' : '🎤 sprechen oder tippen'
++                enabled: !plugin.laedt
++                inputMethodHints: Qt.ImhNoAutoUppercase
++                onTextChanged: suchTimer.restart()
++                onAccepted: { suchTimer.stop(); plugin.suchen(text); if (plugin.ausgewaehlt()) plugin.speichern(); }
++            }
++
++            BusyIndicator { running: plugin.laedt; visible: running; Layout.alignment: Qt.AlignHCenter }
++
++            Label {
++                visible: !plugin.laedt && sucheFeld.text.length > 0 && plugin.treffer.length === 0
++                text: 'Keine passende Art gefunden.'
++                color: '#a33'
++            }
++
++            // --- Treffer (max. 5)
++            Repeater {
++                model: plugin.treffer
++                delegate: Rectangle {
++                    required property var modelData
++                    required property int index
++                    Layout.fillWidth: true
++                    implicitHeight: zeile.implicitHeight + 16
++                    radius: 8
++                    color: index === plugin.auswahlIndex ? plugin.gruenHell : '#f6f8f6'
++                    border.width: index === plugin.auswahlIndex ? 2 : 1
++                    border.color: index === plugin.auswahlIndex ? plugin.gruen : '#d8e4da'
++                    ColumnLayout {
++                        id: zeile
++                        anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
++                        anchors.margins: 10
++                        spacing: 2
++                        Label {
++                            Layout.fillWidth: true
++                            text: modelData.taxon.deutscher_name || modelData.taxon.wissenschaftlicher_name
++                            font.bold: true; font.pixelSize: 17; elide: Text.ElideRight
++                        }
++                        Label {
++                            Layout.fillWidth: true
++                            text: '<i>' + (modelData.taxon.voller_name || modelData.taxon.wissenschaftlicher_name || '—') + '</i> · ' + (modelData.taxon.rang || '') +
++                                  (modelData.trefferart === 'synonym' ? ' · Synonym: ' + modelData.treffername : '') +
++                                  (modelData.trefferart === 'eigen' ? ' · eigenes Synonym' : '')
++                            textFormat: Text.StyledText
++                            color: '#53645a'; font.pixelSize: 13; elide: Text.ElideRight
++                        }
++                    }
++                    MouseArea { anchors.fill: parent; onClicked: plugin.auswahlIndex = index }
++                }
++            }
++
++            CheckBox {
++                id: synonymMerken
++                objectName: 'gokartSynonymMerken'
++                visible: plugin.ausgewaehlt() !== null && sucheFeld.text.trim().length > 1 &&
++                         !Suche.istExakterName(plugin.index, plugin.ausgewaehlt().id, sucheFeld.text)
++                text: '„' + sucheFeld.text.trim() + '“ als eigenes Synonym merken'
++            }
++
++            Button {
++                Layout.fillWidth: true
++                text: plugin.ausgewaehlt()
++                      ? 'Zu ' + (plugin.aktiveFlaeche || '?') + ' hinzufügen: ' + (plugin.ausgewaehlt().taxon.deutscher_name || plugin.ausgewaehlt().taxon.wissenschaftlicher_name)
++                      : 'Art auswählen'
++                enabled: plugin.ausgewaehlt() !== null && plugin.aktiveFlaeche !== ''
++                font.pixelSize: 17
++                onClicked: plugin.speichern()
++            }
++
++            // --- Bereits erfasste Arten der Fläche
++            Label {
++                text: plugin.aktiveFlaeche ? 'Erfasst auf ' + plugin.aktiveFlaeche + ': ' + plugin.artenDerFlaeche.length + ' Arten' : 'Keine Fläche gewählt'
++                font.bold: true
++                Layout.topMargin: 6
++            }
++            ListView {
++                Layout.fillWidth: true
++                Layout.fillHeight: true
++                clip: true
++                model: plugin.artenDerFlaeche
++                delegate: RowLayout {
++                    required property var modelData
++                    width: ListView.view.width
++                    Label { text: modelData.name; Layout.fillWidth: true; elide: Text.ElideRight }
++                    Label { text: modelData.wiss; color: '#6a7a70'; font.italic: true; font.pixelSize: 12; Layout.maximumWidth: 180; elide: Text.ElideRight }
++                    Button {
++                        id: loeschKnopf
++                        property bool sicher: false
++                        text: sicher ? 'Löschen?' : '🗑'
++                        flat: true
++                        onClicked: { if (sicher) plugin.eintragLoeschen(modelData.fid); else { sicher = true; zurueck.start(); } }
++                        Timer { id: zurueck; interval: 3000; onTriggered: loeschKnopf.sicher = false }
++                    }
++                }
++            }
++        }
++    }
++}
+diff --git a/qfield/plugin/gokart_icon.svg b/qfield/plugin/gokart_icon.svg
+new file mode 100644
+index 0000000..f070e03
+--- /dev/null
++++ b/qfield/plugin/gokart_icon.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="#ffffff" d="M20.5 3.5c-7.6.2-12.9 2.4-15 6.5-1.4 2.8-.9 5.6.3 7.6L3.3 20.1l1.4 1.4 2.5-2.5c2 1.2 4.8 1.7 7.6.3 4.1-2.1 6.3-7.4 6.5-15l-.8-.8zM14 17.5c-2 1-4 .8-5.4.1l6.1-6.1-1.4-1.4-6.1 6.1c-.7-1.4-.9-3.4.1-5.4 1.5-3 5.3-4.9 11.5-5.2-.3 6.2-2.2 10-4.8 11.9z"/></svg>
+diff --git a/qfield/plugin/gokart_suche.js b/qfield/plugin/gokart_suche.js
+new file mode 100644
+index 0000000..39f90c9
+--- /dev/null
++++ b/qfield/plugin/gokart_suche.js
+@@ -0,0 +1,190 @@
++.pragma library
++// GoKart – fehlertolerante Pflanzennamensuche (QML-JavaScript, auch in Node testbar)
++// normalisieren() MUSS identisch zu werkzeuge/gokart_namen.py bleiben.
++
++var ZEICHEN = {
++    'ä': 'a', 'ö': 'o', 'ü': 'u', 'ß': 'ss', 'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
++    'á': 'a', 'à': 'a', 'â': 'a', 'å': 'a', 'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
++    'ó': 'o', 'ò': 'o', 'ô': 'o', 'ú': 'u', 'ù': 'u', 'û': 'u', 'ç': 'c', 'ñ': 'n',
++    'ø': 'o', 'æ': 'ae', 'œ': 'oe', '×': 'x'
++};
++
++// Gewichtung der Namensart (höher = bevorzugt bei gleicher Trefferqualität)
++var ART = { eigen: 6, deutsch: 5, zusatz: 5, wissenschaftlich: 4, synonym: 3 };
++// Bevorzugung des Rangs bei Gleichstand (Art vor Unterart vor Aggregat vor Gattung)
++var RANG = { SPE: 4, SSP: 3, VAR: 2, AGG: 2, GRU: 1, SEC: 1, SGE: 1, GAT: 0 };
++
++function normalisieren(text) {
++    var s = String(text === null || text === undefined ? '' : text).toLowerCase();
++    var out = '';
++    for (var i = 0; i < s.length; i++) {
++        var ch = s.charAt(i);
++        out += ZEICHEN.hasOwnProperty(ch) ? ZEICHEN[ch] : ch;
++    }
++    return out.replace(/[^a-z0-9]/g, '');
++}
++
++// Kölner Phonetik auf normalisiertem Text (a-z0-9): gleicht Hör-/Erkennungsfehler aus,
++// z. B. "kwerkus" = "quercus", "stil" = "stiel", "knaulgras" = "knäuelgras"
++function phonetik(s) {
++    var roh = '';
++    for (var i = 0; i < s.length; i++) {
++        var c = s.charAt(i), vor = i > 0 ? s.charAt(i - 1) : '', nach = s.charAt(i + 1);
++        var code = '';
++        if ('aeijouy'.indexOf(c) >= 0) code = '0';
++        else if (c === 'h') code = '';
++        else if (c === 'b') code = '1';
++        else if (c === 'p') code = (nach === 'h') ? '3' : '1';
++        else if (c === 'd' || c === 't') code = ('csz'.indexOf(nach) >= 0 && nach !== '') ? '8' : '2';
++        else if (c === 'f' || c === 'v' || c === 'w') code = '3';
++        else if (c === 'g' || c === 'k' || c === 'q') code = '4';
++        else if (c === 'c') {
++            if (i === 0) code = ('ahkloqrux'.indexOf(nach) >= 0 && nach !== '') ? '4' : '8';
++            else code = ('ahkoqux'.indexOf(nach) >= 0 && nach !== '' && vor !== 's' && vor !== 'z') ? '4' : '8';
++        }
++        else if (c === 'x') code = (vor === 'c' || vor === 'k' || vor === 'q') ? '8' : '48';
++        else if (c === 'l') code = '5';
++        else if (c === 'm' || c === 'n') code = '6';
++        else if (c === 'r') code = '7';
++        else if (c === 's' || c === 'z') code = '8';
++        roh += code;
++    }
++    var out = '';
++    for (var k = 0; k < roh.length; k++) {
++        var d = roh.charAt(k);
++        if (k > 0 && d === roh.charAt(k - 1)) continue;   // Doppelte zusammenfassen
++        out += d;
++    }
++    return out.charAt(0) + out.substring(1).replace(/0/g, '');
++}
++
++// Levenshtein mit frühem Abbruch, wenn maxDist überschritten wird
++function distanz(a, b, maxDist) {
++    if (Math.abs(a.length - b.length) > maxDist) return maxDist + 1;
++    var prev = new Array(b.length + 1);
++    for (var j = 0; j <= b.length; j++) prev[j] = j;
++    for (var i = 1; i <= a.length; i++) {
++        var row = [i];
++        var rowMin = i;
++        var ca = a.charCodeAt(i - 1);
++        for (var k = 1; k <= b.length; k++) {
++            var v = Math.min(row[k - 1] + 1, prev[k] + 1, prev[k - 1] + (ca === b.charCodeAt(k - 1) ? 0 : 1));
++            row[k] = v;
++            if (v < rowMin) rowMin = v;
++        }
++        if (rowMin > maxDist) return maxDist + 1;
++        prev = row;
++    }
++    return prev[b.length];
++}
++
++// Erzeugt einen leeren Suchindex
++function neuerIndex() {
++    return { taxa: {}, eintraege: [], schluessel: {} };
++}
++
++// taxon: { taxon_id, wissenschaftlicher_name, deutscher_name, rang }
++function taxonHinzufuegen(index, taxon) {
++    index.taxa[taxon.taxon_id] = taxon;
++}
++
++// art: 'eigen' | 'deutsch' | 'wissenschaftlich' | 'synonym'
++function nameHinzufuegen(index, taxonId, name, art, schluessel) {
++    var key = schluessel || normalisieren(name);
++    if (!key || !index.taxa[taxonId]) return;
++    var doppelt = taxonId + '|' + key;
++    var vorhanden = index.schluessel[doppelt];
++    var gewicht = ART[art] || 1;
++    if (vorhanden !== undefined) {
++        var e = index.eintraege[vorhanden];
++        if (gewicht > e.gewicht) { e.gewicht = gewicht; e.art = art; e.name = String(name); }
++        return;
++    }
++    index.schluessel[doppelt] = index.eintraege.length;
++    index.eintraege.push({ id: taxonId, key: key, phon: phonetik(key), name: String(name), art: art, gewicht: gewicht });
++}
++
++function bewerten(q, qp, e) {
++    if (q === e.key) return 1000 + e.gewicht;
++    if (e.key.indexOf(q) === 0) return 820 + Math.min(q.length / e.key.length, 1) * 100 + e.gewicht;
++    if (q.length >= 3 && e.key.indexOf(q) > 0) return 700 + Math.min(q.length / e.key.length, 1) * 100 + e.gewicht;
++    var best = 0;
++    // Ähnlich klingend: Phonetik-Code gleich / Präfix / wenige Abweichungen.
++    // Kölner Phonetik ist grob, daher zusätzlich mit Buchstabenähnlichkeit gewichten.
++    if (qp.length >= 3 && qp.charAt(0) === e.phon.charAt(0)) {
++        var pScore = 0;
++        if (qp === e.phon) pScore = 1;
++        else if (e.phon.indexOf(qp) === 0) pScore = 0.85 * Math.min(qp.length / e.phon.length + 0.3, 1);
++        else {
++            var mp = Math.max(1, Math.floor(qp.length * 0.25));
++            var dp = distanz(qp, e.phon, mp);
++            if (dp <= mp) pScore = 0.8 * (1 - dp / Math.max(qp.length, e.phon.length));
++        }
++        if (pScore > 0) {
++            var vgl = e.key.length > q.length + 4 ? e.key.substring(0, q.length + 2) : e.key;
++            var lang = Math.max(q.length, vgl.length);
++            var buchst = 1 - distanz(q, vgl, lang) / lang;
++            best = 380 + pScore * 200 + buchst * 300 + e.gewicht;
++        }
++    }
++    // Tippfehler (gleicher Anfangsbuchstabe, max. ~30 % abweichende Zeichen)
++    if (q.charAt(0) === e.key.charAt(0)) {
++        var maxDist = Math.max(1, Math.floor(Math.max(q.length, e.key.length) * 0.3));
++        var d = distanz(q, e.key, maxDist);
++        if (d <= maxDist) best = Math.max(best, (1 - d / Math.max(q.length, e.key.length)) * 650 + e.gewicht);
++    }
++    return best;
++}
++
++// Liefert bis zu `anzahl` Treffer: [{ id, taxon, score, treffername, trefferart, exakt }]
++function suchen(index, eingabe, anzahl) {
++    anzahl = anzahl || 5;
++    var q = normalisieren(eingabe);
++    if (!q) return [];
++    var qp = phonetik(q);
++    var beste = {};
++    for (var i = 0; i < index.eintraege.length; i++) {
++        var e = index.eintraege[i];
++        var s = bewerten(q, qp, e);
++        if (s <= 0) continue;
++        var b = beste[e.id];
++        if (!b || s > b.score) beste[e.id] = { id: e.id, score: s, treffername: e.name, trefferart: e.art, exakt: s >= 1000 };
++    }
++    var liste = [];
++    for (var id in beste) {
++        var t = index.taxa[id];
++        var r = beste[id];
++        r.taxon = t;
++        r.id = t.taxon_id;
++        liste.push(r);
++    }
++    function sortieren(a, b) {
++        if (b.score !== a.score) return b.score - a.score;
++        var ra = RANG[a.taxon.rang] || 0, rb = RANG[b.taxon.rang] || 0;
++        if (rb !== ra) return rb - ra;
++        return String(a.taxon.wissenschaftlicher_name).localeCompare(String(b.taxon.wissenschaftlicher_name));
++    }
++    liste.sort(sortieren);
++    // Schwache Treffer weglassen, wenn es deutlich bessere gibt
++    if (liste.length) {
++        var grenze = Math.max(450, liste[0].score - 330);
++        liste = liste.filter(function (r) { return r.score >= grenze; });
++    }
++    // Eindeutiger Treffer: Arten derselben Gattung als Alternativen nach vorn holen
++    if (liste.length && liste[0].exakt && liste[0].taxon.wissenschaftlicher_name) {
++        var gattung = String(liste[0].taxon.wissenschaftlicher_name).split(' ')[0] + ' ';
++        for (var n = 1; n < liste.length; n++) {
++            if (String(liste[n].taxon.wissenschaftlicher_name).indexOf(gattung) === 0)
++                liste[n].score = Math.max(liste[n].score, 740);
++        }
++        liste.sort(sortieren);
++    }
++    return liste.slice(0, anzahl);
++}
++
++// Hat die Eingabe exakt einen Namen dieses Taxons getroffen?
++function istExakterName(index, taxonId, eingabe) {
++    if (!index) return true;
++    var q = normalisieren(eingabe);
++    return index.schluessel[taxonId + '|' + q] !== undefined;
++}
+diff --git a/qfield/test/qml_harness.py b/qfield/test/qml_harness.py
+new file mode 100644
+index 0000000..7b6d1f2
+--- /dev/null
++++ b/qfield/test/qml_harness.py
+@@ -0,0 +1,347 @@
++#!/usr/bin/env python3
++"""GoKart – Testumgebung für das QField-Plugin ohne QField.
++
++Simuliert iface, qgisProject, QfLayerUtils/QfFeatureUtils (QField 4.x) mit Daten aus gokart.gpkg
++und spielt einen Erfassungsablauf durch. Aufruf:
++    QT_QPA_PLATFORM=offscreen python3 test/qml_harness.py qfield_projekt [screenshot.png]
++"""
++import re
++import sqlite3
++import sys
++from pathlib import Path
++
++from PySide6.QtCore import QObject, Property, QTimer, QUrl, Signal, Slot
++from PySide6.QtGui import QGuiApplication
++from PySide6.QtQml import QQmlComponent, QQmlEngine
++from PySide6 import QtQuick  # noqa: F401 (registriert QQuickItem*-Konverter)
++
++PROJEKT = Path(sys.argv[1]).resolve()
++GPKG = PROJEKT / 'gokart.gpkg'
++FEHLER = []
++BEHALTEN = []   # an QML übergebene Python-Objekte am Leben halten (sonst Segfault)
++
++
++class Feature(QObject):
++    def __init__(self, fields, werte, fid=None):
++        super().__init__()
++        self._fields, self._w, self._fid = fields, dict(werte), fid
++
++    @Slot(str, result='QVariant')
++    def attribute(self, name):
++        return self._w.get(name)
++
++    @Slot(int, 'QVariant')
++    def setAttribute(self, i, v):
++        self._w[self._fields.names[i]] = v
++
++    @Property('QVariant', constant=True)
++    def id(self):
++        return self._fid
++
++
++class Fields(QObject):
++    def __init__(self, names):
++        super().__init__()
++        self.names = names
++
++    @Slot(str, result=int)
++    def indexFromName(self, n):
++        return self.names.index(n) if n in self.names else -1
++
++
++class Crs(QObject):
++    @Property(str, constant=True)
++    def authid(self):
++        return 'EPSG:25833'
++
++
++class Iterator(QObject):
++    def __init__(self, feats):
++        super().__init__()
++        self._f, self._i = feats, 0
++
++    @Slot(result=bool)
++    def hasNext(self):
++        return self._i < len(self._f)
++
++    @Slot(result=QObject)
++    def next(self):
++        self._i += 1
++        return self._f[self._i - 1]
++
++    @Slot()
++    def close(self):
++        pass
++
++
++class Layer(QObject):
++    def __init__(self, name):
++        super().__init__()
++        self._name = name
++        con = sqlite3.connect(GPKG)
++        cur = con.execute(f'SELECT * FROM "{name}"')
++        self._fields = Fields([d[0] for d in cur.description if d[0] != 'geom'])
++        self.rows = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
++        con.close()
++        self.puffer, self.loeschen, self.edit = [], [], False
++        self._crs = Crs()
++
++    @Property(QObject, constant=True)
++    def fields(self):
++        return self._fields
++
++    @Property(QObject, constant=True)
++    def crs(self):
++        return self._crs
++
++    @Slot(result=bool)
++    def startEditing(self):
++        self.edit = True
++        return True
++
++    @Slot(result=bool)
++    def commitChanges(self):
++        con = sqlite3.connect(GPKG)
++        for w in self.puffer:
++            w = {k: v for k, v in w.items() if k != 'fid' and v is not None}
++            con.execute(f'INSERT INTO "{self._name}" ({",".join(w)}) VALUES ({",".join("?" * len(w))})', list(w.values()))
++        for fid in self.loeschen:
++            con.execute(f'DELETE FROM "{self._name}" WHERE fid=?', (fid,))
++        con.commit()
++        cur = con.execute(f'SELECT * FROM "{self._name}"')
++        self.rows = [dict(zip([d[0] for d in cur.description], r)) for r in cur.fetchall()]
++        con.close()
++        self.puffer, self.loeschen, self.edit = [], [], False
++        return True
++
++    @Slot(result=bool)
++    def rollBack(self):
++        self.puffer, self.loeschen, self.edit = [], [], False
++        return True
++
++    def features(self, ausdruck=None):
++        rows = self.rows
++        if ausdruck:
++            if ausdruck.startswith('intersects('):
++                rows = [r for r in rows if r.get('flaeche_id') == 'F-002']   # Simulation: Punkt liegt in F-002
++            else:
++                for feld, wert in re.findall(r'"(\w+)" = (\'(?:[^\']|\'\')*\'|[\d.]+)', ausdruck):
++                    wert = wert[1:-1].replace("''", "'") if wert.startswith("'") else float(wert)
++                    rows = [r for r in rows if r.get(feld) == wert]
++        fs = [Feature(self._fields, r, r.get('fid')) for r in rows]; BEHALTEN.extend(fs); return fs
++
++
++class Utils(QObject):
++    @Slot(QObject, result=QObject)
++    def createFeatureIterator(self, layer):
++        it = Iterator(layer.features()); BEHALTEN.append(it); return it
++
++    @Slot(QObject, str, result=QObject)
++    def createFeatureIteratorFromExpression(self, layer, expr):
++        it = Iterator(layer.features(expr)); BEHALTEN.append(it); return it
++
++    @Slot(QObject, QObject, result=bool)
++    def addFeature(self, layer, f):
++        if not layer.edit:
++            FEHLER.append('addFeature ohne Bearbeitungsmodus')
++            return False
++        layer.puffer.append(f._w)
++        return True
++
++    @Slot(QObject, QObject, 'QVariant', bool, result=bool)
++    def deleteFeature(self, project, layer, fid, flush):
++        layer.loeschen.append(fid)
++        return True
++
++    @Slot(QObject, result=QObject)
++    def createFeature(self, layer):
++        f = Feature(layer.fields, {n: None for n in layer.fields.names}); BEHALTEN.append(f); return f
++
++
++class Project(QObject):
++    def __init__(self):
++        super().__init__()
++        self.layers = {n: Layer(n) for n in ('flaechen', 'taxon', 'suchnamen', 'eigene_synonyme', 'artnachweise')}
++
++    @Slot(str, result='QVariantList')
++    def mapLayersByName(self, n):
++        return [self.layers[n]] if n in self.layers else []
++
++
++class Pos(QObject):
++    @Property(bool, constant=True)
++    def latitudeValid(self): return True
++    @Property(bool, constant=True)
++    def longitudeValid(self): return True
++    @Property(float, constant=True)
++    def latitude(self): return 52.512
++    @Property(float, constant=True)
++    def longitude(self): return 13.337
++
++
++class Positioning(QObject):
++    def __init__(self):
++        super().__init__()
++        self._p = Pos()
++
++    @Property(QObject, constant=True)
++    def positionInformation(self):
++        return self._p
++
++
++class Iface(QObject):
++    def __init__(self, win):
++        super().__init__()
++        self.win, self.toasts, self.toolbar = win, [], []
++        self._pos = Positioning()
++
++    @Slot(result=QObject)
++    def mainWindow(self):
++        return self.win
++
++    @Slot(QObject)   # Slot(QQuickItem) löst in PySide6 6.12 einen QML-Typfehler aus
++    def addItemToPluginsToolbar(self, item):
++        self.toolbar.append(item)
++        item.setProperty('parent', self.win.property('contentItem'))
++
++    @Slot(result=QObject)
++    def positioning(self):
++        return self._pos
++
++    @Slot(str, result=QObject)
++    def findItemByObjectName(self, n):
++        return None
++
++
++app = QGuiApplication(sys.argv)
++engine = QQmlEngine()
++engine.warnings.connect(lambda ws: [FEHLER.append(w.toString()) for w in ws])
++utils = Utils()
++# qmlRegisterSingletonInstance ist in PySide6 6.12 fehlerhaft -> Mock-Modul als QML-Singleton
++modul = Path(__file__).resolve().parent / 'mock_qml' / 'org' / 'qfield' / 'core'
++modul.mkdir(parents=True, exist_ok=True)
++(modul / 'qmldir').write_text('module org.qfield.core\nsingleton QfLayerUtils 1.0 QfLayerUtils.qml\nsingleton QfFeatureUtils 1.0 QfLayerUtils.qml\n')
++(modul / 'QfLayerUtils.qml').write_text('''pragma Singleton
++import QtQuick
++QtObject {
++  function createFeatureIterator(l) { return _utils.createFeatureIterator(l) }
++  function createFeatureIteratorFromExpression(l, e) { return _utils.createFeatureIteratorFromExpression(l, e) }
++  function addFeature(l, f) { return _utils.addFeature(l, f) }
++  function deleteFeature(p, l, fid, flush) { return _utils.deleteFeature(p, l, fid, flush) }
++  function createFeature(l) { return _utils.createFeature(l) }
++}
++''')
++engine.addImportPath(str(modul.parent.parent.parent))
++engine.rootContext().setContextProperty('_utils', utils)
++
++# Hauptfenster mit displayToast() wie in QField
++fenster_qml = b'''
++import QtQuick
++import QtQuick.Window
++Window { width: 420; height: 860; visible: true; color: "#ddd"
++  property var toasts: []
++  function displayToast(t) { toasts.push(t); console.log("TOAST: " + t) } }
++'''
++wc = QQmlComponent(engine)
++wc.setData(fenster_qml, QUrl('fenster.qml'))
++win = wc.create()
++if win is None:
++    sys.exit('Fenster: ' + str(wc.errors()))
++
++projekt = Project()
++iface = Iface(win)
++ctx = engine.rootContext()
++ctx.setContextProperty('iface', iface)
++ctx.setContextProperty('qgisProject', projekt)
++
++comp = QQmlComponent(engine, QUrl.fromLocalFile(str(PROJEKT / 'gokart.qml')))
++plugin = comp.create(ctx)
++if plugin is None:
++    sys.exit('Plugin-Fehler: ' + '\n'.join(e.toString() for e in comp.errors()))
++plugin.setProperty('parent', win.property('contentItem'))
++
++
++def prop(name):
++    x = plugin.property(name)
++    return x.toVariant() if hasattr(x, 'toVariant') else x
++
++
++def schritt(n):
++    print(f"Schritt {n}", flush=True)
++    try:
++        _schritt(n)
++    except Exception as e:  # Test abbrechen statt hängen
++        import traceback
++        traceback.print_exc()
++        app.exit(2)
++
++
++def _schritt(n):
++    p = plugin
++    if n == 0:
++        assert len(iface.toolbar) == 1, 'Toolbar-Knopf fehlt'
++        p.oeffnen()
++    elif n == 1:
++        assert p.property('index') is not None, 'Index nicht geladen'
++        p.flaecheAusGps()
++        assert p.property('aktiveFlaeche') == 'F-002', p.property('aktiveFlaeche')
++        feld = win.findChild(QObject, '') and None
++        p.setProperty('letzteMeldung', '')
++        sf = finde('sucheFeld')
++        sf.setProperty('text', 'Stil Eiche')
++    elif n == 2:
++        tr = prop('treffer')
++        print('Treffer:', [t['taxon']['deutscher_name'] for t in tr])
++        assert tr and tr[0]['taxon']['wissenschaftlicher_name'] == 'Quercus robur'
++        p.setProperty('auswahlIndex', 0)
++        cb = finde('synonymMerken')
++        print('Synonym-Checkbox sichtbar:', cb.property('visible'))
++        cb.setProperty('checked', True)
++        if len(sys.argv) > 2:
++            win.grabWindow().save(sys.argv[2].replace('.png', '_treffer.png'))
++        p.speichern()
++    elif n == 3:
++        arten = prop('artenDerFlaeche')
++        print('Arten auf F-002:', [a['name'] for a in arten])
++        assert len(arten) == 1
++        finde('sucheFeld').setProperty('text', 'stil eiche')
++    elif n == 4:
++        tr = prop('treffer')
++        print('Nach Synonym:', [(t['taxon']['deutscher_name'], t['trefferart'], t['exakt']) for t in tr][:2])
++        assert tr[0]['exakt'] and tr[0]['trefferart'] == 'eigen'
++        p.speichern()     # Duplikat -> Hinweis, kein zweiter Eintrag
++    elif n == 5:
++        assert len(prop('artenDerFlaeche')) == 1, 'Duplikat wurde gespeichert'
++        finde('sucheFeld').setProperty('text', 'Spitzwegerich')
++    elif n == 6:
++        p.speichern()
++    elif n == 7:
++        print('Arten auf F-002:', [a['name'] for a in prop('artenDerFlaeche')])
++        assert len(prop('artenDerFlaeche')) == 2
++        if len(sys.argv) > 2:
++            win.grabWindow().save(sys.argv[2])
++        fid = prop('artenDerFlaeche')[0]['fid']
++        p.eintragLoeschen(fid)
++    elif n == 8:
++        assert len(prop('artenDerFlaeche')) == 1
++        t = win.property('toasts'); print('Toasts:', t.toVariant() if hasattr(t, 'toVariant') else t)
++        warn = [f for f in FEHLER if 'gokart' in f.lower() or 'addFeature' in f]
++        print('QML-Warnungen:', warn or 'keine')
++        app.exit(1 if warn else 0)
++        return
++    QTimer.singleShot(400, lambda: schritt(n + 1))
++
++
++def finde(name):
++    on = {'sucheFeld': 'gokartSucheFeld', 'synonymMerken': 'gokartSynonymMerken'}[name]
++    for wurzel in (plugin, win):
++        for o in wurzel.findChildren(QObject):
++            if o.objectName() == on:
++                return o
++    raise AssertionError(f'{name} nicht gefunden')
++
++
++QTimer.singleShot(300, lambda: schritt(0))
++code = app.exec()
++print('ERGEBNIS:', 'OK' if code == 0 else 'FEHLER')
++sys.exit(code)
+diff --git a/qfield/test/test_suche.js b/qfield/test/test_suche.js
+new file mode 100644
+index 0000000..cc1577f
+--- /dev/null
++++ b/qfield/test/test_suche.js
+@@ -0,0 +1,31 @@
++// Aufruf: python3 test/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json && node test/test_suche.js testdaten.json
++const fs = require('fs'), vm = require('vm');
++const code = fs.readFileSync(__dirname + '/../plugin/gokart_suche.js', 'utf8').replace('.pragma library', '');
++const S = {}; vm.createContext(S); vm.runInContext(code, S);
++const d = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
++let t0 = Date.now();
++const idx = S.neuerIndex();
++d.taxa.forEach(t => S.taxonHinzufuegen(idx, t));
++d.namen.forEach(n => S.nameHinzufuegen(idx, n[0], n[1], n[2], n[3]));
++console.log('Index:', idx.eintraege.length, 'Einträge in', Date.now() - t0, 'ms');
++const faelle = [
++  ['Stiel-Eiche', 'Quercus robur'], ['stieleiche', 'Quercus robur'], ['Stiel Eiche', 'Quercus robur'],
++  ['Stil Eiche', 'Quercus robur'], ['Quercus robur', 'Quercus robur'], ['kwerkus robur', 'Quercus robur'],
++  ['Spitzahorn', 'Acer platanoides'], ['Feldahorn', 'Acer campestre'], ['Acer campestre', 'Acer campestre'],
++  ['Brennnessel', null], ['Große Brennnessel', 'Urtica dioica'], ['Gänseblümchen', 'Bellis perennis'],
++  ['gänse blümchen', 'Bellis perennis'], ['Löwenzahn', null], ['Schafgarbe', null], ['Rot-Klee', 'Trifolium pratense'],
++  ['Rotklee', 'Trifolium pratense'], ['Weißklee', 'Trifolium repens'], ['Spitz Wegerich', 'Plantago lanceolata'],
++  ['Glatthafer', 'Arrhenatherum elatius'], ['Schwarznessel', null], ['Ruten-Hasenohr', null], ['Hänge Birke', 'Betula pendula'],
++  ['Rot Buche', 'Fagus sylvatica'], ['Sumpfdotterblume', 'Caltha palustris'], ['Sumpf Dotter Blume', 'Caltha palustris'],
++  ['Spitzwegerisch', 'Plantago lanceolata'], ['Schaf garbe', null], ['Löwen zahn', null], ['Breitwegerich', null], ['Knaul Gras', 'Dactylis glomerata agg.'], ['Wiesen Rispengras', 'Poa pratensis agg.'],
++];
++let ok = 0, ms = 0;
++for (const [q, erwartet] of faelle) {
++  const a = Date.now(); const r = S.suchen(idx, q, 5); ms += Date.now() - a;
++  const namen = r.map(x => `${x.taxon.deutscher_name || '-'} [${x.taxon.wissenschaftlicher_name}${x.exakt ? ',exakt' : ''}]`);
++  const hit = erwartet === null || r.some(x => x.taxon.wissenschaftlicher_name === erwartet);
++  const erster = erwartet && r[0] && r[0].taxon.wissenschaftlicher_name === erwartet;
++  if (hit) ok++;
++  console.log(`${hit ? (erster || !erwartet ? 'OK ' : 'OK~') : 'XX '} ${q.padEnd(20)} → ${namen.join(' | ')}`);
++}
++console.log(`\n${ok}/${faelle.length} gefunden, Ø ${(ms / faelle.length).toFixed(1)} ms/Suche`);
+diff --git a/qfield/test/testdaten_export.py b/qfield/test/testdaten_export.py
+new file mode 100644
+index 0000000..3f61e1f
+--- /dev/null
++++ b/qfield/test/testdaten_export.py
+@@ -0,0 +1,10 @@
++#!/usr/bin/env python3
++"""Exportiert taxon + suchnamen aus gokart.gpkg als testdaten.json für test_suche.js.
++Aufruf: python3 test/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json"""
++import json, sqlite3, sys
++c = sqlite3.connect(sys.argv[1])
++d = {'taxa': [dict(zip(['taxon_id', 'wissenschaftlicher_name', 'deutscher_name', 'rang'], r))
++              for r in c.execute('SELECT taxon_id, wissenschaftlicher_name, anzeige_name, rang FROM taxon')],
++     'namen': [list(r) for r in c.execute('SELECT taxon_id, name, art, schluessel FROM suchnamen')]}
++json.dump(d, open(sys.argv[2], 'w'), ensure_ascii=False)
++print(len(d['taxa']), 'Taxa,', len(d['namen']), 'Suchnamen')
+diff --git a/qfield/werkzeuge/build_gokart_projekt.py b/qfield/werkzeuge/build_gokart_projekt.py
+new file mode 100644
+index 0000000..348f38a
+--- /dev/null
++++ b/qfield/werkzeuge/build_gokart_projekt.py
+@@ -0,0 +1,361 @@
++#!/usr/bin/env python3
++"""GoKart – erzeugt das QField-Projekt (GeoPackage + QGIS-Projekt) aus GoKart_Pflanzen.sqlite.
++
++Aufruf (Ubuntu mit installiertem QGIS):
++    python3 build_gokart_projekt.py \
++        --db /media/emu/daten/gpb/GoKart/pflanzen/GoKart_Pflanzen_Datenbank/GoKart_Pflanzen.sqlite \
++        --ziel /media/emu/daten/gpb/GoKart/qfield_projekt
++
++Ergebnis im Zielordner:
++    gokart.gpkg   Flächen, Taxa, Suchnamen, eigene Synonyme, Artnachweise
++    gokart.qgs    QGIS-/QField-Projekt (Relation Fläche -> Artnachweise, Auswahllisten)
++    gokart.qml    Projekt-Plugin (wird separat aus plugin/ kopiert, gleicher Name wie .qgs!)
++
++Vorhandene Daten werden NICHT überschrieben, außer mit --neu.
++"""
++import argparse
++import os
++import shutil
++import sqlite3
++import sys
++from datetime import datetime
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from gokart_namen import normalisieren, varianten  # noqa: E402
++
++from qgis.core import (  # noqa: E402
++    QgsApplication, QgsCoordinateReferenceSystem, QgsDefaultValue, QgsEditFormConfig,
++    QgsEditorWidgetSetup, QgsFeature, QgsField, QgsFieldConstraints, QgsFields,
++    QgsGeometry, QgsProject, QgsRasterLayer, QgsRelation, QgsVectorFileWriter,
++    QgsVectorLayer, QgsWkbTypes, QgsAttributeEditorContainer, QgsAttributeEditorField,
++    QgsAttributeEditorRelation, QgsPalLayerSettings, QgsVectorLayerSimpleLabeling,
++    QgsFillSymbol, QgsSingleSymbolRenderer, QgsCoordinateTransformContext,
++)
++from qgis.PyQt.QtCore import QVariant  # noqa: E402
++
++CRS = 'EPSG:25833'   # ETRS89 / UTM 33N – Berlin/Brandenburg
++
++# Drei Testflächen im Großen Tiergarten (Berlin), Rechteck: Mittelpunkt E/N, Breite, Höhe [m]
++TESTFLAECHEN = [
++    ('F-001', 'Testfläche Tiergarten Ost', 388400, 5819380, 60, 40),
++    ('F-002', 'Testfläche Tiergarten Süd', 387150, 5819300, 80, 50),
++    ('F-003', 'Testfläche Tiergarten West', 386650, 5820030, 70, 70),
++]
++
++
++def feld(name, typ, laenge=0):
++    return QgsField(name, typ, len=laenge)
++
++
++def schreiben(layer, gpkg, neu_datei):
++    opt = QgsVectorFileWriter.SaveVectorOptions()
++    opt.driverName = 'GPKG'
++    opt.layerName = layer.name()
++    opt.fileEncoding = 'UTF-8'
++    opt.actionOnExistingFile = (QgsVectorFileWriter.CreateOrOverwriteFile if neu_datei
++                                else QgsVectorFileWriter.CreateOrOverwriteLayer)
++    err = QgsVectorFileWriter.writeAsVectorFormatV3(layer, str(gpkg), QgsCoordinateTransformContext(), opt)
++    if err[0] != QgsVectorFileWriter.NoError:
++        raise SystemExit(f'Fehler beim Schreiben von {layer.name()}: {err}')
++
++
++def speicher_layer(name, felder, geom='None'):
++    uri = f'{geom}?crs={CRS}' if geom != 'None' else 'None'
++    lyr = QgsVectorLayer(uri, name, 'memory')
++    lyr.dataProvider().addAttributes(felder)
++    lyr.updateFields()
++    return lyr
++
++
++def germansl_namen(pfad):
++    """{wissenschaftlicher Name: [Volksnamen]} aus GermanSL (nur akzeptierte Namen)."""
++    if not pfad or not Path(pfad).is_file():
++        return {}
++    g = sqlite3.connect(f'file:{pfad}?mode=ro', uri=True)
++    d = {}
++    for name, vn in g.execute('SELECT TaxonName, VernacularName FROM GermanSL '
++                              'WHERE SYNONYM = 0 AND VernacularName IS NOT NULL AND VernacularName <> \'\''):
++        d.setdefault(name.strip(), []).append(vn.strip())
++    g.close()
++    return d
++
++
++def zusatz_namen(pfad):
++    """{wissenschaftlicher Name: [Namen]} aus zusatznamen.csv (Spalten: wissenschaftlicher_name;name)."""
++    d = {}
++    if pfad and Path(pfad).is_file():
++        import csv
++        with open(pfad, encoding='utf-8') as fh:
++            for zeile in csv.DictReader((l for l in fh if not l.startswith('#')), delimiter=';'):
++                w, n = (zeile.get('wissenschaftlicher_name') or '').strip(), (zeile.get('name') or '').strip()
++                if w and n:
++                    d.setdefault(w, []).append(n)
++    return d
++
++
++def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None):
++    gsl = germansl_namen(germansl)
++    zus = zusatz_namen(zusatz)
++    quelle = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
++    taxa = quelle.execute('SELECT taxon_id, wissenschaftlicher_name, deutscher_name, rang, akzeptierter_name FROM taxon').fetchall()
++    namen = quelle.execute('SELECT taxon_id, wissenschaftlicher_name, synonym_status FROM namen').fetchall()
++    eigene = quelle.execute('SELECT taxon_id, synonym, angelegt_am FROM eigene_synonyme').fetchall()
++    erfasst = quelle.execute('SELECT flaeche_id, taxon_id, erfasst_am, bemerkung, original_spracheingabe FROM flaechen_arten').fetchall()
++    quelle.close()
++
++    # --- Flächen
++    fl = speicher_layer('flaechen', [feld('flaeche_id', QVariant.String, 20), feld('name', QVariant.String, 120),
++                                     feld('bemerkung', QVariant.String, 500)], 'Polygon')
++    feats = []
++    for fid, name, e, n, b, h in TESTFLAECHEN:
++        f = QgsFeature(fl.fields())
++        f.setAttributes([fid, name, 'Testfläche – durch echte Kartierflächen ersetzen'])
++        f.setGeometry(QgsGeometry.fromWkt(
++            f'POLYGON(({e-b/2} {n-h/2},{e+b/2} {n-h/2},{e+b/2} {n+h/2},{e-b/2} {n+h/2},{e-b/2} {n-h/2}))'))
++        feats.append(f)
++    fl.dataProvider().addFeatures(feats)
++    schreiben(fl, gpkg, True)
++
++    # --- Taxa + Suchnamen
++    tx = speicher_layer('taxon', [feld('taxon_id', QVariant.Int), feld('wissenschaftlicher_name', QVariant.String),
++                                  feld('deutscher_name', QVariant.String), feld('anzeige_name', QVariant.String),
++                                  feld('rang', QVariant.String, 5), feld('autor_name', QVariant.String)])
++    sn = speicher_layer('suchnamen', [feld('taxon_id', QVariant.Int), feld('name', QVariant.String),
++                                      feld('schluessel', QVariant.String), feld('art', QVariant.String, 20)])
++    tx_feats, sn_feats, ids = [], [], set()
++    stat = {'deutsch': 0, 'wissenschaftlich': 0, 'synonym': 0, 'zusatz': 0}
++    ergaenzt = 0
++
++    def suchname(tid, name, art):
++        k = normalisieren(name)
++        if not k:
++            return
++        f = QgsFeature(sn.fields())
++        f.setAttributes([tid, name, k, art])
++        sn_feats.append(f)
++        stat[art] += 1
++
++    for tid, wiss, deutsch, rang, voll in taxa:
++        anzeige, var = varianten(deutsch)
++        # GermanSL-Volksnamen ergänzen (füllt Lücken der BfN-Liste, z. B. Feld-Ahorn)
++        for vn in gsl.get(wiss, []):
++            a2, v2 = varianten(vn)
++            if not anzeige and a2:
++                anzeige = a2
++                ergaenzt += 1
++            var += [v for v in v2 if v not in var]
++        f = QgsFeature(tx.fields())
++        f.setAttributes([tid, wiss, deutsch, anzeige or wiss, rang, voll])
++        tx_feats.append(f)
++        ids.add(tid)
++        for v in var:
++            suchname(tid, v, 'deutsch')
++        for n in zus.get(wiss, []):
++            suchname(tid, n, 'zusatz')
++    gesehen = set()
++    for tid, wiss, status in namen:
++        if tid not in ids or not wiss:
++            continue
++        art = 'wissenschaftlich' if str(status) == '1' else 'synonym'
++        k = (tid, normalisieren(wiss))
++        if k in gesehen:
++            continue
++        gesehen.add(k)
++        suchname(tid, wiss, art)
++    tx.dataProvider().addFeatures(tx_feats)
++    sn.dataProvider().addFeatures(sn_feats)
++    schreiben(tx, gpkg, False)
++    schreiben(sn, gpkg, False)
++
++    # --- Eigene Synonyme (werden in QField vom Plugin ergänzt)
++    es = speicher_layer('eigene_synonyme', [feld('taxon_id', QVariant.Int), feld('synonym', QVariant.String),
++                                            feld('schluessel', QVariant.String), feld('angelegt_am', QVariant.String)])
++    ef = []
++    for tid, syn, am in eigene:
++        f = QgsFeature(es.fields())
++        f.setAttributes([tid, syn, normalisieren(syn), am])
++        ef.append(f)
++    es.dataProvider().addFeatures(ef)
++    schreiben(es, gpkg, False)
++
++    # --- Artnachweise (Erfassungen je Fläche)
++    an = speicher_layer('artnachweise', [
++        feld('flaeche_id', QVariant.String, 20), feld('taxon_id', QVariant.Int),
++        feld('wissenschaftlicher_name', QVariant.String), feld('deutscher_name', QVariant.String),
++        feld('original_eingabe', QVariant.String), feld('erfasst_am', QVariant.String),
++        feld('bemerkung', QVariant.String, 500)])
++    af = []
++    tx_map = {t[0]: t for t in taxa}
++    for flid, tid, am, bem, orig in erfasst:
++        t = tx_map.get(tid)
++        f = QgsFeature(an.fields())
++        f.setAttributes([flid, tid, t[1] if t else None, t[2] if t else None, orig, am, bem])
++        af.append(f)
++    an.dataProvider().addFeatures(af)
++    schreiben(an, gpkg, False)
++
++    # Indizes für schnelle Abfragen in QField
++    con = sqlite3.connect(gpkg)
++    con.executescript('''
++        CREATE INDEX IF NOT EXISTS idx_suchnamen_schluessel ON suchnamen(schluessel);
++        CREATE INDEX IF NOT EXISTS idx_taxon_id ON taxon(taxon_id);
++        CREATE INDEX IF NOT EXISTS idx_artnachweise_flaeche ON artnachweise(flaeche_id);
++        CREATE INDEX IF NOT EXISTS idx_flaechen_id ON flaechen(flaeche_id);
++    ''')
++    con.commit()
++    con.close()
++    print(f'GermanSL: {ergaenzt} fehlende deutsche Namen ergänzt')
++    print(f'GeoPackage: {len(tx_feats)} Taxa, Suchnamen {stat}, {len(ef)} eigene Synonyme, {len(af)} Artnachweise')
++
++
++def value_relation(layer, feldname, ziel, schluessel, wert, filter_ausdruck=''):
++    layer.setEditorWidgetSetup(layer.fields().indexFromName(feldname), QgsEditorWidgetSetup('ValueRelation', {
++        'Layer': ziel.id(), 'LayerName': ziel.name(), 'LayerSource': ziel.source(), 'LayerProviderName': 'ogr',
++        'Key': schluessel, 'Value': wert, 'AllowNull': False, 'OrderByValue': True,
++        'UseCompleter': True, 'AllowMulti': False, 'FilterExpression': filter_ausdruck}))
++
++
++def ausblenden(layer, *felder):
++    for f in felder:
++        layer.setEditorWidgetSetup(layer.fields().indexFromName(f), QgsEditorWidgetSetup('Hidden', {}))
++
++
++def projekt_erzeugen(ziel, gpkg):
++    p = QgsProject.instance()
++    p.clear()
++    p.setCrs(QgsCoordinateReferenceSystem(CRS))
++    p.setTitle('GoKart – Pflanzenkartierung')
++
++    def lade(name):
++        lyr = QgsVectorLayer(f'{gpkg}|layername={name}', name, 'ogr')
++        if not lyr.isValid():
++            raise SystemExit(f'Layer {name} ungültig')
++        return lyr
++
++    fl, an, es, tx, sn = (lade(n) for n in ('flaechen', 'artnachweise', 'eigene_synonyme', 'taxon', 'suchnamen'))
++
++    root = p.layerTreeRoot()
++    osm = QgsRasterLayer('type=xyz&url=https://tile.openstreetmap.org/{z}/{x}/{y}.png&zmax=19&zmin=0',
++                         'OpenStreetMap (online)', 'wms')
++    for lyr in (fl, an, es):
++        p.addMapLayer(lyr)
++    ref = root.addGroup('Referenz (nicht bearbeiten)')
++    for lyr in (tx, sn):
++        p.addMapLayer(lyr, False)
++        ref.addLayer(lyr)
++        lyr.setReadOnly(True)
++    ref.setExpanded(False)
++    if osm.isValid():
++        p.addMapLayer(osm, False)
++        root.addLayer(osm)
++
++    # Darstellung Flächen
++    fl.setRenderer(QgsSingleSymbolRenderer(QgsFillSymbol.createSimple(
++        {'color': '22,125,80,50', 'outline_color': '22,125,80,255', 'outline_width': '0.8'})))
++    lab = QgsPalLayerSettings()
++    lab.fieldName = 'flaeche_id'
++    fl.setLabeling(QgsVectorLayerSimpleLabeling(lab))
++    fl.setLabelsEnabled(True)
++    fl.setDisplayExpression('"flaeche_id" || \' – \' || coalesce("name", \'\')')
++
++    # Pflichtfeld + eindeutige Flächen-ID
++    i = fl.fields().indexFromName('flaeche_id')
++    fl.setConstraintExpression(i, '"flaeche_id" IS NOT NULL AND length("flaeche_id") > 0', 'Flächen-ID fehlt')
++    fl.setFieldConstraint(i, QgsFieldConstraints.ConstraintUnique, QgsFieldConstraints.ConstraintStrengthHard)
++    ausblenden(fl, 'fid')
++
++    # Artnachweise-Formular
++    value_relation(an, 'flaeche_id', fl, 'flaeche_id', 'flaeche_id')
++    value_relation(an, 'taxon_id', tx, 'taxon_id', 'anzeige_name')
++    ausblenden(an, 'fid')
++    an.setDefaultValueDefinition(an.fields().indexFromName('erfasst_am'),
++                                 QgsDefaultValue("format_date(now(), 'yyyy-MM-ddTHH:mm:ss')"))
++    # Namen automatisch aus der Taxon-Tabelle übernehmen, falls im Formular erfasst
++    an.setDefaultValueDefinition(an.fields().indexFromName('wissenschaftlicher_name'), QgsDefaultValue(
++        "attribute(get_feature('taxon','taxon_id',\"taxon_id\"),'wissenschaftlicher_name')", True))
++    an.setDefaultValueDefinition(an.fields().indexFromName('deutscher_name'), QgsDefaultValue(
++        "attribute(get_feature('taxon','taxon_id',\"taxon_id\"),'anzeige_name')", True))
++    an.setDisplayExpression('coalesce("deutscher_name", "wissenschaftlicher_name") || \' (\' || "flaeche_id" || \')\'')
++    value_relation(es, 'taxon_id', tx, 'taxon_id', 'anzeige_name')
++    ausblenden(es, 'fid', 'schluessel')
++    es.setDisplayExpression('"synonym"')
++
++    tx.setDisplayExpression('coalesce("anzeige_name", "wissenschaftlicher_name")')
++
++    # Relation Fläche 1:n Artnachweise
++    rel = QgsRelation()
++    rel.setId('flaeche_artnachweise')
++    rel.setName('Artnachweise')
++    rel.setReferencedLayer(fl.id())
++    rel.setReferencingLayer(an.id())
++    rel.addFieldPair('flaeche_id', 'flaeche_id')
++    if not rel.isValid():
++        raise SystemExit('Relation ungültig: ' + rel.validationError())
++    p.relationManager().addRelation(rel)
++
++    # Drag&Drop-Formular der Fläche mit eingebetteter Artenliste
++    cfg = fl.editFormConfig()
++    cfg.setLayout(QgsEditFormConfig.TabLayout)
++    cfg.clearTabs()
++    tab = QgsAttributeEditorContainer('Fläche', cfg.invisibleRootContainer())
++    tab.setIsGroupBox(False)
++    for n in ('flaeche_id', 'name', 'bemerkung'):
++        tab.addChildElement(QgsAttributeEditorField(n, fl.fields().indexFromName(n), tab))
++    cfg.addTab(tab)
++    tab2 = QgsAttributeEditorContainer('Arten', cfg.invisibleRootContainer())
++    tab2.setIsGroupBox(False)
++    tab2.addChildElement(QgsAttributeEditorRelation(rel, tab2))
++    cfg.addTab(tab2)
++    fl.setEditFormConfig(cfg)
++
++    # Relative Pfade, damit der Ordner aufs Gerät kopiert werden kann
++    p.writeEntry('Paths', 'Absolute', False)
++    out = ziel / 'gokart.qgs'
++    if not p.write(str(out)):
++        raise SystemExit('Projekt konnte nicht gespeichert werden')
++    print(f'Projekt: {out}')
++
++
++def main():
++    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
++    ap.add_argument('--db', required=True, type=Path)
++    ap.add_argument('--ziel', required=True, type=Path)
++    ap.add_argument('--germansl', type=Path, help='germansl.sqlite (GermanSL 1.5) für zusätzliche deutsche Namen')
++    ap.add_argument('--zusatz', type=Path, default=Path(__file__).resolve().parent / 'zusatznamen.csv',
++                    help='CSV mit eigenen Zusatznamen (wissenschaftlicher_name;name)')
++    ap.add_argument('--plugin', type=Path, default=Path(__file__).resolve().parent.parent / 'plugin')
++    ap.add_argument('--neu', action='store_true', help='vorhandenes gokart.gpkg überschreiben (Erfassungen gehen verloren!)')
++    a = ap.parse_args()
++    if not a.db.is_file():
++        raise SystemExit(f'Datenbank nicht gefunden: {a.db}')
++    a.ziel.mkdir(parents=True, exist_ok=True)
++    gpkg = a.ziel / 'gokart.gpkg'
++    if gpkg.exists() and not a.neu:
++        raise SystemExit(f'{gpkg} existiert bereits. Mit --neu überschreiben (vorher sichern!).')
++    if gpkg.exists():
++        sicherung = gpkg.with_name(f'gokart_{datetime.now():%Y%m%d_%H%M%S}.gpkg.bak')
++        shutil.copy2(gpkg, sicherung)
++        print(f'Sicherung: {sicherung}')
++
++    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
++    app = QgsApplication([], False)
++    app.initQgis()
++    try:
++        gpkg_erzeugen(a.db, gpkg, a.germansl, a.zusatz)
++        projekt_erzeugen(a.ziel, gpkg)
++    finally:
++        QgsProject.instance().clear()
++        app.exitQgis()
++
++    # Plugin neben das Projekt legen (Name muss dem .qgs entsprechen)
++    if a.plugin.is_dir():
++        shutil.copy2(a.plugin / 'gokart.qml', a.ziel / 'gokart.qml')
++        shutil.copy2(a.plugin / 'gokart_suche.js', a.ziel / 'gokart_suche.js')
++        if (a.plugin / 'gokart_icon.svg').exists():
++            shutil.copy2(a.plugin / 'gokart_icon.svg', a.ziel / 'gokart_icon.svg')
++        print('Plugin kopiert: gokart.qml, gokart_suche.js')
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/qfield/werkzeuge/gokart_namen.py b/qfield/werkzeuge/gokart_namen.py
+new file mode 100644
+index 0000000..19855ae
+--- /dev/null
++++ b/qfield/werkzeuge/gokart_namen.py
+@@ -0,0 +1,87 @@
++"""GoKart – Aufbereitung deutscher Pflanzennamen zu Suchvarianten.
++
++normalisieren() MUSS identisch zu normalisieren() in plugin/gokart_suche.js bleiben.
++"""
++import html
++import re
++
++# Gleiche Tabelle wie in gokart_suche.js
++ZEICHEN = {
++    'ä': 'a', 'ö': 'o', 'ü': 'u', 'ß': 'ss', 'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
++    'á': 'a', 'à': 'a', 'â': 'a', 'å': 'a', 'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
++    'ó': 'o', 'ò': 'o', 'ô': 'o', 'ú': 'u', 'ù': 'u', 'û': 'u', 'ç': 'c', 'ñ': 'n',
++    'ø': 'o', 'æ': 'ae', 'œ': 'oe', '×': 'x',
++}
++
++
++def normalisieren(text):
++    s = str(text or '').lower()
++    s = ''.join(ZEICHEN.get(ch, ch) for ch in s)
++    return re.sub(r'[^a-z0-9]', '', s)
++
++
++_ZUSATZ = re.compile(r'\s*\b(i\.\s*e\.\s*S\.|i\.\s*w\.\s*S\.|s\.\s*str\.|s\.\s*l\.|agg\.)', re.I)
++
++
++def _bereinigen(teil):
++    teil = html.unescape(teil).replace('\t', ' ')
++    teil = re.sub(r'^\s*Artengruppe\s*', '', teil)
++    teil = re.sub(r'\((Unterart|Varietät|Sektion|Artengruppe|Gattung)\)', '', teil)
++    teil = _ZUSATZ.sub('', teil)
++    return re.sub(r'\s+', ' ', teil).strip(' ,;')
++
++
++def varianten(deutscher_name):
++    """Liefert (anzeige_name, [suchvarianten]) für einen BfN-Namenseintrag.
++
++    Beispiele:
++      'Eiche (Unterart), Stiel-'       -> 'Stiel-Eiche'
++      'Herbstaster, Glatte'            -> 'Glatte Herbstaster'
++      'Holz-Apfel, Wild-Apfel'         -> 'Holz-Apfel', 'Wild-Apfel'
++      '(Dolden-) Spurre'               -> 'Spurre', 'Dolden-Spurre'
++    """
++    if not deutscher_name:
++        return None, []
++    roh = _bereinigen(deutscher_name)
++    teile = [t.strip() for t in roh.split(',') if t.strip()]
++    if not teile:
++        return None, []
++    basis = re.sub(r'\([^)]*\)', '', teile[0]).strip()
++    ergebnis, umgedreht = [], False
++    for i, teil in enumerate(teile):
++        if i > 0 and teil.endswith('-') and ' ' not in teil:
++            ergebnis.append(teil + basis)                      # "Stiel-" + "Eiche"
++            umgedreht = True
++        elif (i > 0 and len(teile) == 2 and ' ' not in teil and '-' not in teil
++              and ' ' not in basis and teil[:1].isupper()
++              and re.search(r'(e|er|es|en)$', teil)):
++            ergebnis.append(f'{teil} {basis}')                  # "Glatte Herbstaster"
++            umgedreht = True
++        else:
++            ergebnis.append(teil)
++    if umgedreht and len(teile) == 2:
++        ergebnis = [ergebnis[1]]        # nur vollständigen Namen; Basis ("Eiche") wäre irreführend
++    # Klammerzusätze: "(Dolden-) Spurre" -> "Spurre" und "Dolden-Spurre"
++    final = []
++    for v in ergebnis:
++        m = re.match(r'^\(([^)]*)\)\s*(.+)$', v)
++        if m:
++            final += [m.group(2).strip(), m.group(1).strip() + m.group(2).strip()]
++        else:
++            final.append(re.sub(r'\s*\([^)]*\)\s*', ' ', v).strip())
++    anzeige = final[0]
++    gesehen, eindeutig = set(), []
++    for v in final:
++        k = normalisieren(v)
++        if k and k not in gesehen:
++            gesehen.add(k)
++            eindeutig.append(v)
++    return anzeige, eindeutig
++
++
++if __name__ == '__main__':
++    for t in ['Eiche (Unterart), Stiel-', 'Herbstaster, Glatte', 'Holz-Apfel, Wild-Apfel',
++              '(Dolden-) Spurre', 'Gewöhnlicher Dost i.e.S.', 'Artengruppe &#9;Frühlings-Hungerblümchen',
++              'Strand-Aster, Salz-Aster, Pannonien-Salzaster', 'Stiel-Eiche', 'Bärenklau, Grünblühende',
++              "Ziz' Habichtskraut", 'Wachsblume (Unterart), Alpen-']:
++        print(f'{t!r:50} -> {varianten(t)}')
+diff --git a/qfield/werkzeuge/zusatznamen.csv b/qfield/werkzeuge/zusatznamen.csv
+new file mode 100644
+index 0000000..e11ec4a
+--- /dev/null
++++ b/qfield/werkzeuge/zusatznamen.csv
+@@ -0,0 +1,9 @@
++# GoKart – zusätzliche gebräuchliche Namen (werden beim Projektbau in die Suche übernommen)
++# Format: wissenschaftlicher_name;name   (wissenschaftlicher Name exakt wie in der Taxon-Tabelle)
++wissenschaftlicher_name;name
++Trifolium pratense;Rot-Klee
++Urtica dioica;Große Brennnessel
++Taraxacum sect. Ruderalia;Gewöhnlicher Löwenzahn
++Bellis perennis;Maßliebchen
++Fagus sylvatica;Buche
++Quercus robur;Deutsche Eiche
+-- 
+2.43.0
+

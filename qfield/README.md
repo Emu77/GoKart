@@ -76,6 +76,16 @@ QT_QPA_PLATFORM=offscreen python3 test/qml_harness.py qfield_projekt_kopie
 ```
 `qml_harness.py` schreibt in das GeoPackage, deshalb nur mit einer **Kopie** ausführen. Benötigt: `pip install PySide6-Essentials`.
 
+## Plugin in vorhandene Projekte übernehmen
+
+`plugin/` ist die einzige Quelle des Plugins. Projektordner (`qfield_projekt/`, `gokart_qfield/`) enthalten nur Kopien.
+Nach Änderungen am Plugin – ohne Neubau, GeoPackage und `.qgs` bleiben unverändert:
+
+```bash
+python3 werkzeuge/plugin_aktualisieren.py ../gokart_qfield            # kopieren
+python3 werkzeuge/plugin_aktualisieren.py ../gokart_qfield --pruefen  # nur vergleichen
+```
+
 ## Suche – wie sie funktioniert
 
 1. Normalisieren: Kleinschreibung, ä→a, ß→ss, Leer- und Bindestriche entfernen („Stiel Eiche“ = „Stiel-Eiche“)

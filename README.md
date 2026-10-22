@@ -52,6 +52,7 @@ Geplante Funktionen:
 - `qfield/plugin/` – QField-Projekt-Plugin (`gokart.qml`, Suchlogik `gokart_suche.js`)
 - `qfield/werkzeuge/` – Projekt-Build (GeoPackage + QGIS-Projekt), Namensaufbereitung
 - `qfield/test/` – Suchtest (Node) und QField-Simulation (PySide6)
+- `gokart_qfield/` – fertiges QField-Projekt mit eigenen Flächen (`gokart.gpkg` nicht im Repo, Plugin nur Kopie – siehe dortige README)
 
 ## Technologien
 

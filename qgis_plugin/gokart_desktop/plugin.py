@@ -224,9 +224,14 @@ class GoKartSetupDialog(QDialog):
         return True
 
 
+_VOSK_MODELS = {}  # Modell nur einmal laden (große Modelle brauchen viele Sekunden)
+
+
 class VoiceThread(QThread):
     result = pyqtSignal(str)
     failure = pyqtSignal(str)
+    ready = pyqtSignal()          # Mikrofon offen -> jetzt sprechen
+    status = pyqtSignal(str)
 
     def __init__(self, model_path, parent=None):
         super().__init__(parent)
@@ -237,13 +242,11 @@ class VoiceThread(QThread):
             import sounddevice as sd
             from vosk import Model, KaldiRecognizer
             import queue
-            q = queue.Queue()
-            model = Model(self.model_path)
-            rate = 16000
-            recognizer = KaldiRecognizer(model, rate)
-            def callback(indata, frames, time_info, status):
-                q.put(bytes(indata))
-            # Maximal 8 Sekunden; Aufnahme läuft bis zur ersten längeren Pause
+            model = _VOSK_MODELS.get(self.model_path)
+            if model is None:
+                self.status.emit('Sprachmodell wird geladen …')
+                model = Model(self.model_path)
+                _VOSK_MODELS[self.model_path] = model
             # Logitech-Webcam anhand ihrer USB-Kennung auswählen
             devices = sd.query_devices()
             webcam = next(
@@ -254,9 +257,17 @@ class VoiceThread(QThread):
             )
             if webcam is None:
                 raise RuntimeError('Webcam-Mikrofon nicht gefunden.')
+            rate = 16000
+            recognizer = KaldiRecognizer(model, rate)
+            q = queue.Queue()
 
+            def callback(indata, frames, time_info, status):
+                q.put(bytes(indata))
+
+            # Max. 8 Sekunden; Ende bei erster längerer Pause NACH erkanntem Text
             with sd.RawInputStream(samplerate=rate, blocksize=8000, dtype='int16',
                                    channels=1, device=webcam, callback=callback):
+                self.ready.emit()
                 for _ in range(16):
                     if recognizer.AcceptWaveform(q.get(timeout=3)):
                         t = json.loads(recognizer.Result()).get('text', '').strip()
@@ -685,8 +696,10 @@ class GoKartDock(QDockWidget):
             self.settings.setValue('GoKart/vosk_model', path)
             model = path
         self.mic.setEnabled(False)
-        self.message('● Bitte Art einsprechen (max. 8 Sekunden).')
+        self.message('Mikrofon wird vorbereitet … noch nicht sprechen.')
         self.voice = VoiceThread(model, self)
+        self.voice.status.connect(self.message)
+        self.voice.ready.connect(lambda: self.message('● JETZT sprechen (max. 8 Sekunden).'))
         self.voice.result.connect(self.voice_result)
         self.voice.failure.connect(lambda err: self.message('Spracherkennung: ' + err))
         self.voice.finished.connect(lambda: self.mic.setEnabled(True))
@@ -694,7 +707,10 @@ class GoKartDock(QDockWidget):
 
     def voice_result(self, text):
         self.query.setText(text)
-        self.message('Erkannt: ' + (text or '(nichts)') + ' – Art bestätigen und speichern.')
+        if text:
+            self.message('Erkannt: ' + text + ' – Art bestätigen und speichern.')
+        else:
+            self.message('Nichts erkannt – nach „JETZT sprechen“ deutlich einsprechen.')
 
 
 class GoKartPlugin:

@@ -1,0 +1,10 @@
+[general]
+name=GoKart Desktop
+qgisMinimumVersion=3.22
+version=0.1.0
+Author=GoKart Projekt
+email=
+description=Pflanzenarten Flächen zuordnen; Offline-Spracherkennung optional über Vosk
+about=QGIS Desktop Plugin für Linux und Windows. GeoPackage wird im QGIS-Projekt eingebunden.
+category=Plugins
+experimental=True

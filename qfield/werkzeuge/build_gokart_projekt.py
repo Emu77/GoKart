@@ -94,6 +94,33 @@ def zusatz_namen(pfad):
     return d
 
 
+def zusatz_taxa(pfad):
+    """Zusätzliche Taxa aus zusatztaxa.csv (z. B. Moose, die in der Quell-DB fehlen).
+    Spalten: taxon_id;wissenschaftlicher_name;deutscher_name;rang;autor_name;weitere_namen (mit | getrennt)
+    Liefert [(taxon_id, wiss, deutsch, rang, autor, [weitere_namen])]."""
+    liste = []
+    if not pfad or not Path(pfad).is_file():
+        return liste
+    import csv
+    gesehen = set()
+    with open(pfad, encoding='utf-8') as fh:
+        for nr, zeile in enumerate(csv.DictReader((l for l in fh if not l.startswith('#')), delimiter=';'), 1):
+            wiss = (zeile.get('wissenschaftlicher_name') or '').strip()
+            tid = (zeile.get('taxon_id') or '').strip()
+            if not wiss:
+                continue
+            if not tid.isdigit():
+                raise SystemExit(f'{pfad}: Zeile {nr} ({wiss}) hat keine gültige taxon_id')
+            if int(tid) in gesehen:
+                raise SystemExit(f'{pfad}: taxon_id {tid} doppelt vergeben')
+            gesehen.add(int(tid))
+            weitere = [n.strip() for n in (zeile.get('weitere_namen') or '').split('|') if n.strip()]
+            liste.append((int(tid), wiss, (zeile.get('deutscher_name') or '').strip() or None,
+                          (zeile.get('rang') or 'SPE').strip(), (zeile.get('autor_name') or '').strip() or None,
+                          weitere))
+    return liste
+
+
 def flaechen_quelle(pfad, layername=None):
     uri = str(pfad) + (f'|layername={layername}' if layername else '')
     src = QgsVectorLayer(uri, Path(pfad).name + (f' ({layername})' if layername else ''), 'ogr')
@@ -159,10 +186,11 @@ def flaechen_importieren(fl, src, id_feld=None, name_feld=None, id_auto=None):
           + (f', {leer} ohne ID (OHNE-ID-…)' if leer else ''))
 
 
-def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None):
+def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None, zusatztaxa=None):
     global CRS
     gsl = germansl_namen(germansl)
     zus = zusatz_namen(zusatz)
+    ztx = zusatz_taxa(zusatztaxa)
     quelle = sqlite3.connect(f'file:{db}?mode=ro', uri=True)
     taxa = quelle.execute('SELECT taxon_id, wissenschaftlicher_name, deutscher_name, rang, akzeptierter_name FROM taxon').fetchall()
     namen = quelle.execute('SELECT taxon_id, wissenschaftlicher_name, synonym_status FROM namen').fetchall()
@@ -225,6 +253,28 @@ def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None):
             suchname(tid, v, 'deutsch')
         for n in zus.get(wiss, []):
             suchname(tid, n, 'zusatz')
+
+    # --- Zusätzliche Taxa (zusatztaxa.csv), z. B. Moose
+    vorhandene_namen = {t[1] for t in taxa}
+    neu_taxa = 0
+    for tid, wiss, deutsch, rang, autor, weitere in ztx:
+        if wiss in vorhandene_namen:
+            print(f'Zusatztaxon übersprungen (schon in der Datenbank): {wiss}')
+            continue
+        if tid in ids:
+            raise SystemExit(f'zusatztaxa.csv: taxon_id {tid} ({wiss}) ist in der Datenbank schon vergeben')
+        anzeige, var = varianten(deutsch)
+        f = QgsFeature(tx.fields())
+        f.setAttributes([tid, wiss, deutsch, anzeige or wiss, rang, autor])
+        tx_feats.append(f)
+        ids.add(tid)
+        taxa.append((tid, wiss, anzeige or deutsch, rang, autor))   # für Artnachweise-Zuordnung unten
+        neu_taxa += 1
+        for v in var:
+            suchname(tid, v, 'deutsch')
+        suchname(tid, wiss, 'wissenschaftlich')
+        for n in weitere + zus.get(wiss, []):
+            suchname(tid, n, 'zusatz')
     gesehen = set()
     for tid, wiss, status in namen:
         if tid not in ids or not wiss:
@@ -278,6 +328,7 @@ def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None):
     con.commit()
     con.close()
     print(f'GermanSL: {ergaenzt} fehlende deutsche Namen ergänzt')
+    print(f'Zusatztaxa: {neu_taxa} Taxa ergänzt')
     print(f'GeoPackage: {len(tx_feats)} Taxa, Suchnamen {stat}, {len(ef)} eigene Synonyme, {len(af)} Artnachweise')
 
 
@@ -396,6 +447,8 @@ def main():
     ap.add_argument('--germansl', type=Path, help='germansl.sqlite (GermanSL 1.5) für zusätzliche deutsche Namen')
     ap.add_argument('--zusatz', type=Path, default=Path(__file__).resolve().parent / 'zusatznamen.csv',
                     help='CSV mit eigenen Zusatznamen (wissenschaftlicher_name;name)')
+    ap.add_argument('--zusatztaxa', type=Path, default=Path(__file__).resolve().parent / 'zusatztaxa.csv',
+                    help='CSV mit Taxa, die in der Quell-DB fehlen, z. B. Moose (siehe Kopf der Datei)')
     ap.add_argument('--plugin', type=Path, default=Path(__file__).resolve().parent.parent / 'plugin')
     ap.add_argument('--flaechen', type=Path, help='eigene Kartierflächen (GPKG/SHP/…, Polygone) statt Testflächen')
     ap.add_argument('--flaechen-layer', help='Layername innerhalb der Datei (bei GeoPackage mit mehreren Layern)')
@@ -430,7 +483,7 @@ def main():
             sicherung = gpkg.with_name(f'gokart_{datetime.now():%Y%m%d_%H%M%S}.gpkg.bak')
             shutil.copy2(gpkg, sicherung)
             print(f'Sicherung: {sicherung}')
-        gpkg_erzeugen(a.db, gpkg, a.germansl, a.zusatz, flaechen)
+        gpkg_erzeugen(a.db, gpkg, a.germansl, a.zusatz, flaechen, a.zusatztaxa)
         projekt_erzeugen(a.ziel, gpkg)
     finally:
         flaechen = src = None          # Layer vor exitQgis freigeben, sonst Absturz beim Beenden

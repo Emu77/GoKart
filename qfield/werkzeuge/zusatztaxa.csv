@@ -1,0 +1,39 @@
+# GoKart – zusätzliche Taxa, die in der Quell-Datenbank fehlen (z. B. Moose)
+# Werden beim Projektbau an die Taxon-Tabelle angehängt; vorhandene wissenschaftliche Namen werden übersprungen.
+# taxon_id: fest vergeben ab 90001, NIE ändern (Artnachweise verweisen darauf)
+# weitere_namen: zusätzliche Suchnamen, mit | getrennt (deutsch oder wissenschaftliche Synonyme)
+# Quelle Artenauswahl: Diplomarbeit Kronas 2005 (Klein Offenseth-Bokelsesser Moor), Anhang 1 und Tabelle 4.4 (nach OVERBECK 1975)
+taxon_id;wissenschaftlicher_name;deutscher_name;rang;autor_name;weitere_namen
+90001;Sphagnum;Torfmoos;GAT;Sphagnum L.;Torfmoose|Sphagnum spec.
+90002;Sphagnum angustifolium;Schmalblättriges Torfmoos;SPE;Sphagnum angustifolium (Warnst.) C. E. O. Jensen;
+90003;Sphagnum austinii;Austins Torfmoos;SPE;Sphagnum austinii Sull.;
+90004;Sphagnum balticum;Baltisches Torfmoos;SPE;Sphagnum balticum (Russow) C. E. O. Jensen;
+90005;Sphagnum capillifolium;Spitzblättriges Torfmoos;SPE;Sphagnum capillifolium (Ehrh.) Hedw.;
+90006;Sphagnum compactum;Dichtes Torfmoos;SPE;Sphagnum compactum Lam. & DC.;
+90007;Sphagnum cuspidatum;Spieß-Torfmoos;SPE;Sphagnum cuspidatum Ehrh. ex Hoffm.;Spießtorfmoos
+90008;Sphagnum fallax;Trügerisches Torfmoos;SPE;Sphagnum fallax (H. Klinggr.) H. Klinggr.;Sphagnum recurvum
+90009;Sphagnum fimbriatum;Gefranstes Torfmoos;SPE;Sphagnum fimbriatum Wilson;
+90010;Sphagnum fuscum;Braunes Torfmoos;SPE;Sphagnum fuscum (Schimp.) H. Klinggr.;
+90011;Sphagnum magellanicum;Mittleres Torfmoos;SPE;Sphagnum magellanicum Brid.;Magellans Torfmoos|Sphagnum medium|Sphagnum divinum
+90012;Sphagnum molle;Weiches Torfmoos;SPE;Sphagnum molle Sull.;
+90013;Sphagnum palustre;Sumpf-Torfmoos;SPE;Sphagnum palustre L.;Kahnblättriges Torfmoos
+90014;Sphagnum papillosum;Warziges Torfmoos;SPE;Sphagnum papillosum Lindb.;
+90015;Sphagnum pulchrum;Schönes Torfmoos;SPE;Sphagnum pulchrum (Lindb. ex Braithw.) Warnst.;
+90016;Sphagnum rubellum;Rotes Torfmoos;SPE;Sphagnum rubellum Wilson;Rötliches Torfmoos
+90017;Sphagnum squarrosum;Sparriges Torfmoos;SPE;Sphagnum squarrosum Crome;
+90018;Sphagnum subnitens;Glänzendes Torfmoos;SPE;Sphagnum subnitens Russow & Warnst.;
+90019;Sphagnum tenellum;Zartes Torfmoos;SPE;Sphagnum tenellum (Brid.) Pers. ex Brid.;
+90020;Aulacomnium palustre;Sumpf-Streifensternmoos;SPE;Aulacomnium palustre (Hedw.) Schwägr.;
+90021;Pleurozium schreberi;Rotstängelmoos;SPE;Pleurozium schreberi (Brid.) Mitt.;Schrebers Rotstengelmoos|Rotstengelmoos
+90022;Polytrichum strictum;Steifes Frauenhaarmoos;SPE;Polytrichum strictum Menzies ex Brid.;Moor-Frauenhaarmoos
+90023;Pohlia nutans;Nickendes Pohlmoos;SPE;Pohlia nutans (Hedw.) Lindb.;
+90024;Campylopus flexuosus;Bogiges Krummstielmoos;SPE;Campylopus flexuosus (Hedw.) Brid.;
+90025;Campylopus pyriformis;Birnfrüchtiges Krummstielmoos;SPE;Campylopus pyriformis (Schultz) Brid.;
+90026;Dicranella cerviculata;Kropfiges Kleingabelzahnmoos;SPE;Dicranella cerviculata (Hedw.) Schimp.;
+90027;Dicranum bergeri;Bergers Gabelzahnmoos;SPE;Dicranum bergeri Blandow ex Hoppe;Dicranum undulatum
+90028;Dicranum bonjeanii;Bonjeans Gabelzahnmoos;SPE;Dicranum bonjeanii De Not.;
+90029;Dicranum polysetum;Gewelltes Gabelzahnmoos;SPE;Dicranum polysetum Sw.;
+90030;Dicranum scoparium;Besen-Gabelzahnmoos;SPE;Dicranum scoparium Hedw.;Besenmoos
+90031;Dicranum spurium;Unechtes Gabelzahnmoos;SPE;Dicranum spurium Hedw.;
+90032;Hypnum jutlandicum;Heide-Schlafmoos;SPE;Hypnum jutlandicum Holmen & E. Warncke;
+90033;Leucobryum glaucum;Weißmoos;SPE;Leucobryum glaucum (Hedw.) Ångstr.;Gewöhnliches Weißmoos|Ordenskissen

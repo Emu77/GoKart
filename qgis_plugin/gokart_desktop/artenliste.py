@@ -155,9 +155,9 @@ def csv_schreiben(pfad, nachweise):
     with open(pfad, 'w', newline='', encoding='utf-8-sig') as fh:
         w = csv.writer(fh, delimiter=';')
         w.writerow(['Flächen-ID', 'Fläche', 'Fläche m²', 'Nr.', 'Wissenschaftlicher Name', 'Autor',
-                    'Deutscher Name', 'Rang', 'Eingabe', 'Erfasst am'])
+                    'Deutscher Name', 'Rang', 'Erfasst am'])
         for fid, f in gruppen.items():
             for i, a in enumerate(f['arten'], 1):
                 w.writerow([fid, f['name'], _txt(f['m2']).replace('.', ','), i, _txt(a.get('wiss')), _autor(a),
-                            _txt(a.get('deutsch')), _txt(a.get('rang')), _txt(a.get('eingabe')),
+                            _txt(a.get('deutsch')), _txt(a.get('rang')),
                             _txt(a.get('erfasst_am')).replace('T', ' ')])

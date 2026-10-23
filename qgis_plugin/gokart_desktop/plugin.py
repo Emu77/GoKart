@@ -679,29 +679,28 @@ class GoKartDock(QDockWidget):
                                                    'gokart_artnachweise.csv', 'CSV (*.csv)')
         if not filename:
             return
-        names = layer.fields().names()
+        # Lesbare Liste ohne interne Felder (fid, taxon_id, original_eingabe)
+        flaechen = self.flaechen_info()
+        fk = self.obs_fk()
         try:
             with open(filename, 'w', newline='', encoding='utf-8-sig') as file:
                 writer = csv.writer(file, delimiter=';')
-                writer.writerow(names)
+                writer.writerow(['Flächen-ID', 'Fläche', 'Wissenschaftlicher Name', 'Deutscher Name',
+                                 'Erfasst am', 'Bemerkung'])
+                zeilen = []
                 for f in layer.getFeatures():
-                    writer.writerow([val(f, n) for n in names])
+                    fid = val(f, fk)
+                    zeilen.append([fid, flaechen.get(fid, ('', None))[0], val(f, 'wissenschaftlicher_name'),
+                                   val(f, 'deutscher_name'), val(f, 'erfasst_am').replace('T', ' '),
+                                   val(f, 'bemerkung')])
+                zeilen.sort(key=lambda z: (z[0], z[2].lower()))
+                writer.writerows(zeilen)
             self.message('CSV exportiert: ' + filename)
         except Exception as e:
             self.message('Export fehlgeschlagen: ' + str(e))
 
-    def export_artenliste(self):
-        """Artenliste je Fläche (HTML + CSV) über alle Flächen – Logik in artenliste.py."""
-        from .artenliste import csv_schreiben, html_schreiben
-        layer = self.obs_layer()
-        if not layer:
-            self.message('Layer "artnachweise" fehlt.')
-            return
-        filename, _ = QFileDialog.getSaveFileName(self, 'Artenliste je Fläche speichern',
-                                                   'gokart_artenliste.html', 'HTML (*.html)')
-        if not filename:
-            return
-        # Flächen: Name und Größe über die eingerichtete Verknüpfung
+    def flaechen_info(self):
+        """{Flächen-Schlüssel: (Bezeichnung, Größe m²)} über die eingerichtete Verknüpfung."""
         flaechen = {}
         fl = self.polygon_layer()
         if fl is not None:
@@ -716,6 +715,20 @@ class GoKartDock(QDockWidget):
                 groesse = (f[m2] if m2 and not is_empty(f[m2])
                            else None if fl.crs().isGeographic() else f.geometry().area())
                 flaechen[str(k)] = (val(f, label) if label else '', groesse)
+        return flaechen
+
+    def export_artenliste(self):
+        """Artenliste je Fläche (HTML + CSV) über alle Flächen – Logik in artenliste.py."""
+        from .artenliste import csv_schreiben, html_schreiben
+        layer = self.obs_layer()
+        if not layer:
+            self.message('Layer "artnachweise" fehlt.')
+            return
+        filename, _ = QFileDialog.getSaveFileName(self, 'Artenliste je Fläche speichern',
+                                                   'gokart_artenliste.html', 'HTML (*.html)')
+        if not filename:
+            return
+        flaechen = self.flaechen_info()
         taxa = {}
         tx = self.layer('taxon')
         if tx is not None:

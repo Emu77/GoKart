@@ -325,8 +325,13 @@ class GoKartDock(QDockWidget):
         layout.addWidget(QLabel('Bereits erfasste Arten dieser Fläche'))
         self.existing = QListWidget()
         layout.addWidget(self.existing)
+        row = QHBoxLayout()
         self.export_btn = QPushButton('Export (CSV)')
-        layout.addWidget(self.export_btn)
+        self.liste_btn = QPushButton('Artenliste je Fläche')
+        self.liste_btn.setToolTip('Gutachten-Tabelle aller Flächen als HTML (druckbar/PDF) und CSV')
+        row.addWidget(self.export_btn)
+        row.addWidget(self.liste_btn)
+        layout.addLayout(row)
         self.status = QLabel('QGIS-Projekt mit gokart.gpkg öffnen.')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -346,6 +351,7 @@ class GoKartDock(QDockWidget):
         )
         self.save_btn.clicked.connect(self.save)
         self.export_btn.clicked.connect(self.export_csv)
+        self.liste_btn.clicked.connect(self.export_artenliste)
         self.mic.clicked.connect(self.record)
         self.iface.currentLayerChanged.connect(self.on_layer_changed)
         QgsProject.instance().layersAdded.connect(self.on_project_layers_changed)
@@ -683,6 +689,59 @@ class GoKartDock(QDockWidget):
             self.message('CSV exportiert: ' + filename)
         except Exception as e:
             self.message('Export fehlgeschlagen: ' + str(e))
+
+    def export_artenliste(self):
+        """Artenliste je Fläche (HTML + CSV) über alle Flächen – Logik in artenliste.py."""
+        from .artenliste import csv_schreiben, html_schreiben
+        layer = self.obs_layer()
+        if not layer:
+            self.message('Layer "artnachweise" fehlt.')
+            return
+        filename, _ = QFileDialog.getSaveFileName(self, 'Artenliste je Fläche speichern',
+                                                   'gokart_artenliste.html', 'HTML (*.html)')
+        if not filename:
+            return
+        # Flächen: Name und Größe über die eingerichtete Verknüpfung
+        flaechen = {}
+        fl = self.polygon_layer()
+        if fl is not None:
+            key = self.key_field(fl)
+            label = self.label_field(fl)
+            names = fl.fields().names()
+            m2 = next((n for n in ('flaeche_m2', 'Flaeche_m2', 'flaeche', 'Flaeche') if n in names), None)
+            for f in fl.getFeatures():
+                k = self.area_key(fl, f) if not key else (None if is_empty(f[key]) else f[key])
+                if k is None:
+                    continue
+                groesse = (f[m2] if m2 and not is_empty(f[m2])
+                           else None if fl.crs().isGeographic() else f.geometry().area())
+                flaechen[str(k)] = (val(f, label) if label else '', groesse)
+        taxa = {}
+        tx = self.layer('taxon')
+        if tx is not None:
+            for f in tx.getFeatures():
+                taxa[val(f, 'taxon_id')] = (val(f, 'autor_name'), val(f, 'rang'))
+        fk = self.obs_fk()
+        nachweise = []
+        for f in layer.getFeatures():
+            fid = val(f, fk)
+            name, groesse = flaechen.get(fid, ('', None))
+            autor, rang = taxa.get(val(f, 'taxon_id'), ('', ''))
+            nachweise.append({'flaeche_id': fid, 'flaeche_name': name, 'flaeche_m2': groesse,
+                              'taxon_id': val(f, 'taxon_id'), 'wiss': val(f, 'wissenschaftlicher_name'),
+                              'autor': autor, 'deutsch': val(f, 'deutscher_name'), 'rang': rang,
+                              'eingabe': val(f, 'original_eingabe'), 'erfasst_am': val(f, 'erfasst_am')})
+        try:
+            ziel = Path(filename).with_suffix('.html')
+            projekt = QgsProject.instance().title() or Path(QgsProject.instance().fileName()).stem
+            n_fl, n_tx = html_schreiben(ziel, nachweise, 'Artenliste je Fläche', projekt)
+            csv_schreiben(ziel.with_suffix('.csv'), nachweise)
+            self.message(f'Artenliste: {n_fl} Flächen, {n_tx} Taxa → {ziel} (+ .csv)')
+            from qgis.PyQt.QtCore import QUrl
+            from qgis.PyQt.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(ziel)))
+        except Exception as e:
+            self.message('Artenliste fehlgeschlagen: ' + str(e))
 
     def record(self):
         if self.voice and self.voice.isRunning():

@@ -115,6 +115,30 @@ class Seite:
         con.commit()
         con.close()
 
+    def unregistriert(self):
+        """Tabellen der Projektlayer, die in gpkg_contents fehlen. Sobald eine Tabelle als 'attributes'
+        registriert ist (z. B. fotos), blendet GDAL unregistrierte Tabellen aus – dann fehlen Layer."""
+        fehlend = []
+        for layer in (self.an, self.es):
+            if not layer:
+                continue
+            con = sqlite3.connect(layer['datei'])
+            da = con.execute('SELECT 1 FROM gpkg_contents WHERE lower(table_name) = lower(?)',
+                             (layer['tabelle'],)).fetchone()
+            con.close()
+            if not da:
+                fehlend.append(layer)
+        return fehlend
+
+    def registrieren(self, layers):
+        for layer in layers:
+            con = sqlite3.connect(layer['datei'])
+            con.execute("INSERT INTO gpkg_contents (table_name, data_type, identifier, last_change) "
+                        "VALUES (?, 'attributes', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        (layer['tabelle'], layer['tabelle']))
+            con.commit()
+            con.close()
+
     def fotolayer_im_projekt(self):
         root = ET.parse(self.qgs).getroot()
         return any(ml.findtext('id') == FOTO_LAYER_ID for ml in root.iter('maplayer'))
@@ -269,6 +293,7 @@ def main():
         datei_zum_tb = sorted(f for f in alle_dateien if (pc.home / f).is_file() and not (tb.home / f).is_file())
         fehlt_ganz = sorted(f for f in alle_dateien if not (pc.home / f).is_file() and not (tb.home / f).is_file())
         tabelle_pc, tabelle_tb = not pc.hat_fototabelle(), not tb.hat_fototabelle()
+        reg_pc, reg_tb = pc.unregistriert(), tb.unregistriert()
         layer_tb = not tb.fotolayer_im_projekt()
 
         # --- Eigene Synonyme
@@ -316,10 +341,14 @@ def main():
                   f'{", Layer im Tablet-Projekt eintragen" if layer_tb else ""}')
         if plugin_neu:
             print(f'QField-Plugin wird aktualisiert: {", ".join(plugin_neu)}')
+        if reg_pc or reg_tb:
+            print('GeoPackage-Registrierung wird ergänzt: ' +
+                  ', '.join(f'{s}: {l["tabelle"]}' for s, ls in (('PC', reg_pc), ('Tablet', reg_tb)) for l in ls))
 
         nichts = not (nur_pc or nur_tb or upd_pc or upd_tb or weg_pc or weg_tb or fnur_pc or fnur_tb
                       or fupd_pc or fupd_tb or fweg_pc or fweg_tb or datei_zum_pc or datei_zum_tb
-                      or syn_nur_pc or syn_nur_tb or tabelle_pc or tabelle_tb or layer_tb or plugin_neu)
+                      or syn_nur_pc or syn_nur_tb or tabelle_pc or tabelle_tb or layer_tb or plugin_neu
+                      or reg_pc or reg_tb)
         if nichts:
             print('\n✓ Beide Stände sind gleich.')
             return
@@ -340,6 +369,7 @@ def main():
             return d
 
         def anwenden(seite, n_neu, n_upd, n_weg, f_neu, f_upd, f_weg, syn_neu, dateien, quelle_home, tabelle):
+            seite.registrieren(seite.unregistriert())
             if tabelle:
                 seite.fototabelle_anlegen()
             seite.fotos()                                          # Spaltenliste (neu) lesen

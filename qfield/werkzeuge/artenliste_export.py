@@ -76,6 +76,22 @@ def spalten(con, tabelle):
     return [r[1] for r in con.execute(f'PRAGMA table_info("{tabelle}")')]
 
 
+def vorschau_uri(pfad, groesse=240):
+    """Kleines JPEG als data:-URI (braucht Pillow; ohne Pillow nur Dateiname in der Liste)."""
+    try:
+        import base64
+        import io
+        from PIL import Image
+        with Image.open(pfad) as bild:
+            bild = bild.convert('RGB')
+            bild.thumbnail((groesse, groesse))
+            puffer = io.BytesIO()
+            bild.save(puffer, 'JPEG', quality=80)
+        return 'data:image/jpeg;base64,' + base64.b64encode(puffer.getvalue()).decode('ascii')
+    except Exception:
+        return ''
+
+
 def daten_lesen(qgs):
     layer, var = projekt_lesen(qgs)
     an = layer_suchen(layer, var.get('gokart_nachweis_layer'), 'artnachweise')
@@ -108,17 +124,24 @@ def daten_lesen(qgs):
     con = sqlite3.connect(f'file:{an["datei"]}?mode=ro', uri=True)
     cols = spalten(con, an['tabelle'])
     eingabe = 'original_eingabe' if 'original_eingabe' in cols else 'NULL'
+    bemerkung = 'bemerkung' if 'bemerkung' in cols else 'NULL'
+    fotos = {}
+    if spalten(con, 'fotos'):
+        for f_id, datei, kommentar, auf in con.execute(
+                'SELECT flaeche_id, datei, kommentar, aufgenommen_am FROM fotos ORDER BY aufgenommen_am'):
+            fotos.setdefault(str(f_id), []).append(
+                {'datei': datei, 'kommentar': kommentar, 'am': auf, 'src': vorschau_uri(qgs.parent / (datei or ''))})
     nachweise = []
-    for fid, tid, wiss, deutsch, ein, am in con.execute(
-            f'SELECT "{fk}", taxon_id, wissenschaftlicher_name, deutscher_name, {eingabe}, erfasst_am '
+    for fid, tid, wiss, deutsch, ein, am, bem in con.execute(
+            f'SELECT "{fk}", taxon_id, wissenschaftlicher_name, deutscher_name, {eingabe}, erfasst_am, {bemerkung} '
             f'FROM "{an["tabelle"]}"'):
         name, m2 = flaechen.get(str(fid), (None, None))
         autor, rang = taxa.get(tid, (None, None))
         nachweise.append({'flaeche_id': fid, 'flaeche_name': name, 'flaeche_m2': m2, 'taxon_id': tid,
                           'wiss': wiss, 'autor': autor, 'deutsch': deutsch, 'rang': rang,
-                          'eingabe': ein, 'erfasst_am': am})
+                          'eingabe': ein, 'erfasst_am': am, 'bemerkung': bem})
     con.close()
-    return nachweise
+    return nachweise, fotos, flaechen
 
 
 def main():
@@ -129,10 +152,11 @@ def main():
     a = ap.parse_args()
     with tempfile.TemporaryDirectory() as tmp:
         qgs = projekt_finden(a.projekt, tmp)
-        nachweise = daten_lesen(qgs)
+        nachweise, fotos, flaechen = daten_lesen(qgs)
         ziel = Path(a.ausgabe).expanduser() if a.ausgabe else Path.cwd() / f'artenliste_{Path(a.projekt).stem}'
         ziel.parent.mkdir(parents=True, exist_ok=True)
-        n_fl, n_tx = html_schreiben(ziel.with_suffix('.html'), nachweise, a.titel, Path(a.projekt).stem)
+        n_fl, n_tx = html_schreiben(ziel.with_suffix('.html'), nachweise, a.titel, Path(a.projekt).stem,
+                                    fotos_je_flaeche=fotos, flaechen_info=flaechen)
         csv_schreiben(ziel.with_suffix('.csv'), nachweise)
     print(f'{len(nachweise)} Nachweise, {n_fl} Flächen, {n_tx} Taxa')
     print(f'→ {ziel.with_suffix(".html")}\n→ {ziel.with_suffix(".csv")}')

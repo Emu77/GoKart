@@ -3,6 +3,8 @@
 // Version 0.2: Layer/Felder kommen aus den Projektvariablen, die das Desktop-Plugin ("Einrichten…") setzt:
 //   gokart_flaechen_layer (Layer-ID), gokart_flaechen_key, gokart_flaechen_label,
 //   gokart_nachweis_layer (Layer-ID), gokart_nachweis_fk
+// Version 0.3: Standortfotos über einen zweiten Knopf (Kamera) – Bilddateien unter fotos/, Einträge in der
+//   Tabelle "fotos" (flaeche_id, datei, kommentar, aufgenommen_am, lon, lat). Tabelle/Layer legt abgleich.py an.
 // Getestet gegen die API von QField 4.x; QField 3.x wird über einen Fallback unterstützt.
 import QtQuick
 import QtQuick.Controls
@@ -28,6 +30,11 @@ Item {
     property string letzteMeldung: ''
     property string diagnose: ''         // letzter Speicher-Ablauf, wird im Dialog angezeigt
     property bool diagnoseFehler: false
+    property var dateiUtils: null        // FileUtils / QfFileUtils (Bildgröße begrenzen)
+    property var fotoQuelle: null        // laufende Kameraanfrage (Referenz halten!)
+    property var fotoFuer: null          // { flaeche, lon, lat } des nächsten Fotos
+    property var fotosDerFlaeche: []     // [{ fid, datei, kommentar, am, lon, lat }]
+    readonly property int fotoMaxPixel: 1600   // längste Bildseite, hält Zips klein
 
     readonly property color gruen: '#167d50'
     readonly property color gruenHell: '#e6f6eb'
@@ -38,6 +45,7 @@ Item {
             return;
         }
         iface.addItemToPluginsToolbar(gokartKnopf);
+        iface.addItemToPluginsToolbar(fotoKnopf);
     }
 
     // ---------------------------------------------------------------- Hilfsfunktionen
@@ -69,6 +77,16 @@ Item {
                 var q = Qt.createQmlObject(ecuVarianten[k], plugin, 'gokartEcu' + k);
                 if (q && q.e) ecu = q.e;
             } catch (e2) { /* nächste Variante */ }
+        }
+        var fuVarianten = [
+            'import QtQuick; import org.qfield.core; QtObject { property var f: QfFileUtils }',
+            'import QtQuick; import org.qfield; QtObject { property var f: FileUtils }'
+        ];
+        for (var m = 0; m < fuVarianten.length && !dateiUtils; m++) {
+            try {
+                var d = Qt.createQmlObject(fuVarianten[m], plugin, 'gokartFu' + m);
+                if (d && d.f) dateiUtils = d.f;
+            } catch (e3) { /* nächste Variante */ }
         }
         return ok;
     }
@@ -294,16 +312,22 @@ Item {
         if (!id) { meldung('Keine Fläche ' + quelle + ' gefunden.'); return; }
         aktiveFlaeche = String(id);
         artenLaden();
+        fotosLaden();
         meldung('Aktive Fläche: ' + flaechenName(aktiveFlaeche) + ' (' + quelle + ')');
     }
 
-    function flaecheAusGps() {
+    function gpsPosition() {
         var pos = null;
         try { var p = iface.positioning(); if (p) pos = p.positionInformation; } catch (e) {}
         if (!pos) {
             try { var ps = iface.findItemByObjectName('positionSource'); if (ps) pos = ps.positionInformation; } catch (e2) {}
         }
-        if (!pos || !pos.latitudeValid || !pos.longitudeValid) { meldung('Keine gültige GPS-Position.'); return; }
+        return (pos && pos.latitudeValid && pos.longitudeValid) ? pos : null;
+    }
+
+    function flaecheAusGps() {
+        var pos = gpsPosition();
+        if (!pos) { meldung('Keine gültige GPS-Position.'); return; }
         flaecheWaehlen(flaecheAnPunkt(pos.longitude, pos.latitude, 'EPSG:4326'), 'per GPS');
     }
 
@@ -382,6 +406,98 @@ Item {
         artenLaden();
     }
 
+    // ---------------------------------------------------------------- Standortfotos
+    function fotoLayer() { return ebene('fotos'); }
+
+    function fotoUrl(datei) {
+        return datei ? 'file://' + qgisProject.homePath + '/' + datei : '';
+    }
+
+    function fotosLaden() {
+        var fl = fotoLayer();
+        var liste = [];
+        if (fl && aktiveFlaeche) {
+            alleFeatures(fl, '"flaeche_id" = ' + textSql(aktiveFlaeche), function (f) {
+                liste.push({ fid: f.id, datei: attr(f, 'datei') || '', kommentar: attr(f, 'kommentar') || '',
+                             am: attr(f, 'aufgenommen_am') || '', lon: attr(f, 'lon'), lat: attr(f, 'lat') });
+            });
+            liste.sort(function (a, b) { return String(b.am).localeCompare(String(a.am)); });   // neueste oben
+        }
+        fotosDerFlaeche = liste;
+    }
+
+    function fotoAufnehmen() {
+        if (!fotoLayer()) {
+            meldung('Fototabelle fehlt – am PC einmal abgleich.py laufen lassen und das neue Zip importieren.');
+            return;
+        }
+        if (!aktiveFlaeche) { meldung('Bitte zuerst eine Fläche (Standort) wählen.'); return; }
+        var pos = gpsPosition();
+        var sauber = String(aktiveFlaeche).replace(/[^A-Za-z0-9_-]/g, '_');
+        var datei = 'fotos/gokart_' + sauber + '_' + jetzt().replace(/[-:]/g, '').replace('T', '_') + '.jpg';
+        try { platformUtilities.createDir(qgisProject.homePath, 'fotos'); } catch (e) {}
+        fotoFuer = { flaeche: aktiveFlaeche, lon: pos ? pos.longitude : null, lat: pos ? pos.latitude : null };
+        try {
+            fotoQuelle = platformUtilities.getCameraPicture(qgisProject.homePath + '/', datei, 'jpg', plugin);
+        } catch (e2) {
+            fotoQuelle = null;
+            protokoll('Kamera-Aufruf fehlgeschlagen: ' + e2, true);
+        }
+        if (!fotoQuelle) meldung('Kamera nicht verfügbar.');
+    }
+
+    function fotoErhalten(datei) {
+        var ziel = fotoFuer;
+        fotoFuer = null;
+        fotoQuelle = null;
+        if (!datei || !ziel) return;
+        try { if (dateiUtils) dateiUtils.restrictImageSize(qgisProject.homePath + '/' + datei, fotoMaxPixel); } catch (e) {}
+        var fl = fotoLayer();
+        var ok = inBearbeitung(fl, function () {
+            var f = fu.createFeature(fl);
+            setze(f, fl, 'flaeche_id', ziel.flaeche);
+            setze(f, fl, 'datei', datei);
+            setze(f, fl, 'aufgenommen_am', jetzt());
+            if (ziel.lon !== null) { setze(f, fl, 'lon', ziel.lon); setze(f, fl, 'lat', ziel.lat); }
+            return lu.addFeature(fl, f);
+        });
+        meldung(ok ? '📷 Foto gespeichert – Kommentar kann darunter ergänzt werden.'
+                   : 'Foto aufgenommen, aber nicht eingetragen – Details im Diagnosefeld.');
+        fotosLaden();
+    }
+
+    function fotoKommentar(foto, text) {
+        var fl = fotoLayer();
+        var i = fl ? fl.fields.indexFromName('kommentar') : -1;
+        if (i < 0) return;
+        var t = String(text).trim();
+        var ok = inBearbeitung(fl, function () { return fl.changeAttributeValue(foto.fid, i, t === '' ? null : t); });
+        meldung(ok ? 'Kommentar gespeichert' : 'Kommentar nicht gespeichert – Details im Diagnosefeld.');
+        fotosLaden();
+    }
+
+    function fotoEntfernen(foto) {
+        var fl = fotoLayer();
+        if (!fl) return;
+        var ok = inBearbeitung(fl, function () { return lu.deleteFeature(qgisProject, fl, foto.fid, false); });
+        meldung(ok ? 'Foto entfernt (Datei bleibt im Ordner fotos/).' : 'Entfernen fehlgeschlagen.');
+        fotosLaden();
+    }
+
+    function fotoDialogOeffnen() {
+        fotoDialog.open();
+        konfigLaden();
+        offeneAenderungenSpeichern(fotoLayer());
+        flaechenLaden();
+        fotosLaden();
+    }
+
+    Connections {
+        target: plugin.fotoQuelle
+        ignoreUnknownSignals: true
+        function onResourceReceived(path) { plugin.fotoErhalten(path); }
+    }
+
     function eingabeLeeren() {
         sucheFeld.text = '';
         treffer = [];
@@ -436,6 +552,18 @@ Item {
         icon.height: 24
         background: Rectangle { radius: width / 2; color: plugin.gruen }
         onClicked: plugin.oeffnen()
+    }
+
+    RoundButton {
+        id: fotoKnopf
+        width: 48
+        height: 48
+        icon.source: Qt.resolvedUrl('gokart_foto.svg')
+        icon.color: 'white'
+        icon.width: 24
+        icon.height: 24
+        background: Rectangle { radius: width / 2; color: plugin.gruen }
+        onClicked: plugin.fotoDialogOeffnen()
     }
 
     // ---------------------------------------------------------------- Erfassungsdialog
@@ -606,6 +734,153 @@ Item {
                         flat: true
                         onClicked: { if (sicher) plugin.eintragLoeschen(modelData.fid); else { sicher = true; zurueck.start(); } }
                         Timer { id: zurueck; interval: 3000; onTriggered: loeschKnopf.sicher = false }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- Standortfotos
+    Popup {
+        id: fotoDialog
+        parent: iface.mainWindow().contentItem
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.min(parent.width - 16, 640)
+        height: parent.height - 32
+        x: (parent.width - width) / 2
+        y: 16
+        padding: 12
+        background: Rectangle { color: 'white'; radius: 12 }
+        Material.theme: Material.Light
+        Material.accent: plugin.gruen
+        Material.primary: plugin.gruen
+        Material.foreground: '#1c2934'
+        Material.background: 'white'
+        palette.text: '#1c2934'
+        palette.windowText: '#1c2934'
+        palette.buttonText: '#1c2934'
+        palette.base: 'white'
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: 'GoKart · Standortfotos'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true }
+                Button { text: 'Schließen'; flat: true; onClicked: fotoDialog.close() }
+            }
+
+            Label { text: 'Fläche (Standort)'; font.bold: true }
+            RowLayout {
+                Layout.fillWidth: true
+                ComboBox {
+                    Layout.fillWidth: true
+                    model: plugin.flaechen.map(function (f) { return f.name ? f.name + ' (' + f.id + ')' : f.id; })
+                    currentIndex: {
+                        for (var i = 0; i < plugin.flaechen.length; i++) if (plugin.flaechen[i].id === plugin.aktiveFlaeche) return i;
+                        return -1;
+                    }
+                    displayText: currentIndex < 0 ? 'Fläche wählen …' : currentText
+                    onActivated: function (i) { plugin.flaecheWaehlen(plugin.flaechen[i].id, 'aus Liste'); }
+                }
+                Button { text: 'GPS'; onClicked: plugin.flaecheAusGps() }
+                Button { text: 'Karte'; onClicked: plugin.flaecheAusKartenmitte() }
+            }
+
+            Button {
+                id: kameraKnopf
+                Layout.fillWidth: true
+                Layout.preferredHeight: 52
+                enabled: plugin.aktiveFlaeche !== ''
+                text: plugin.aktiveFlaeche ? '📷  Foto aufnehmen – ' + plugin.flaechenName(plugin.aktiveFlaeche) : 'Erst Fläche wählen'
+                font.pixelSize: 17
+                // eigene Farben: unabhängig vom QField-Theme gut lesbar
+                contentItem: Label {
+                    text: kameraKnopf.text; font: kameraKnopf.font; color: 'white'; elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle { radius: 8; color: !kameraKnopf.enabled ? '#9fb5a8' : (kameraKnopf.down ? '#0f5c3a' : plugin.gruen) }
+                onClicked: plugin.fotoAufnehmen()
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: plugin.diagnoseFehler
+                text: 'Diagnose: ' + plugin.diagnose
+                wrapMode: Text.Wrap; font.pixelSize: 11; color: '#a33'
+            }
+
+            Label {
+                text: plugin.aktiveFlaeche ? plugin.fotosDerFlaeche.length + ' Foto(s) von ' + plugin.flaechenName(plugin.aktiveFlaeche) : ''
+                font.bold: true
+                Layout.topMargin: 4
+            }
+
+            ListView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: 14
+                model: plugin.fotosDerFlaeche
+                delegate: ColumnLayout {
+                    id: fotoKarte
+                    required property var modelData
+                    width: ListView.view.width
+                    spacing: 4
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 260
+                        color: '#f3f5f3'
+                        radius: 8
+                        Image {
+                            id: bild
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            source: plugin.fotoUrl(fotoKarte.modelData.datei)
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true; cache: false
+                            sourceSize.width: 1000; sourceSize.height: 1000
+                        }
+                        Label {
+                            anchors.centerIn: parent
+                            visible: bild.status === Image.Error
+                            text: 'Bilddatei nicht gefunden:\n' + fotoKarte.modelData.datei
+                            horizontalAlignment: Text.AlignHCenter
+                            color: '#a33'
+                        }
+                    }
+                    Label {
+                        text: String(fotoKarte.modelData.am).replace('T', ' ').substring(0, 16) +
+                              (fotoKarte.modelData.lat !== null && fotoKarte.modelData.lat !== undefined
+                               ? '  ·  GPS ' + Number(fotoKarte.modelData.lat).toFixed(5) + ', ' + Number(fotoKarte.modelData.lon).toFixed(5) : '')
+                        color: '#6a7a70'; font.pixelSize: 12
+                    }
+                    TextField {
+                        id: kommentar
+                        Layout.fillWidth: true
+                        text: fotoKarte.modelData.kommentar
+                        placeholderText: 'Kommentar tippen oder Tastatur-Mikro (z. B. Licht, Feuchte) …'
+                        onAccepted: plugin.fotoKommentar(fotoKarte.modelData, text)
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Button {
+                            Layout.fillWidth: true
+                            text: 'Kommentar speichern'
+                            enabled: kommentar.text.trim() !== fotoKarte.modelData.kommentar
+                            onClicked: plugin.fotoKommentar(fotoKarte.modelData, kommentar.text)
+                        }
+                        Button {
+                            id: entfernKnopf
+                            property bool sicher: false
+                            text: sicher ? 'Sicher?' : 'Foto entfernen'
+                            flat: true
+                            onClicked: { if (sicher) plugin.fotoEntfernen(fotoKarte.modelData); else { sicher = true; entfernZurueck.start(); } }
+                            Timer { id: entfernZurueck; interval: 3000; onTriggered: entfernKnopf.sicher = false }
+                        }
                     }
                 }
             }

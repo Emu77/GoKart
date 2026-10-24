@@ -21,13 +21,14 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QSettings, QTimer
+from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QSettings, QTimer, QSize, QUrl, QBuffer, QIODevice
+from qgis.PyQt.QtGui import QDesktopServices, QIcon, QImage, QPixmap
 from qgis.PyQt.QtWidgets import (QAction, QComboBox, QDockWidget, QFileDialog,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QCheckBox,
     QVBoxLayout, QWidget, QDialog, QDialogButtonBox, QFormLayout)
 from qgis.core import (QgsCoordinateTransform, QgsFeature, QgsGeometry,
     QgsPointXY, QgsProject, QgsMapLayerType, QgsExpression, QgsFeatureRequest,
-    QgsRelation, QgsExpressionContextUtils as ECU)
+    QgsRelation, QgsVectorLayer, QgsExpressionContextUtils as ECU)
 from qgis.gui import QgsMapLayerComboBox, QgsFieldComboBox
 
 try:  # QGIS >= 3.34
@@ -334,6 +335,37 @@ class GoKartDock(QDockWidget):
         self.delete_btn = QPushButton('Markierte Art löschen')
         self.delete_btn.setEnabled(False)
         layout.addWidget(self.delete_btn)
+        self.foto_info = QLabel('')
+        self.foto_info.setWordWrap(True)
+        layout.addWidget(self.foto_info)
+        self.foto_list = QListWidget()      # Standortfotos der aktiven Fläche (Doppelklick öffnet)
+        self.foto_list.setViewMode(QListWidget.IconMode)
+        self.foto_list.setIconSize(QSize(110, 110))
+        self.foto_list.setResizeMode(QListWidget.Adjust)
+        self.foto_list.setMovement(QListWidget.Static)
+        self.foto_list.setFixedHeight(150)
+        self.foto_list.setVisible(False)
+        layout.addWidget(self.foto_list)
+        # Markiertes Foto: große Vorschau + Kommentar (tippen oder einsprechen)
+        self.foto_box = QWidget()
+        fb = QVBoxLayout(self.foto_box)
+        fb.setContentsMargins(0, 0, 0, 0)
+        self.foto_gross = QLabel()
+        self.foto_gross.setAlignment(Qt.AlignCenter)
+        self.foto_gross.setMinimumHeight(200)
+        self.foto_gross.setToolTip('Doppelklick in der Fotoleiste öffnet das Bild in voller Größe')
+        fb.addWidget(self.foto_gross)
+        row = QHBoxLayout()
+        self.foto_kommentar = QLineEdit()
+        self.foto_kommentar.setPlaceholderText('Kommentar zum Standort …')
+        self.foto_mic = QPushButton('● Sprechen')
+        row.addWidget(self.foto_kommentar)
+        row.addWidget(self.foto_mic)
+        fb.addLayout(row)
+        self.foto_save = QPushButton('Kommentar speichern')
+        fb.addWidget(self.foto_save)
+        self.foto_box.setVisible(False)
+        layout.addWidget(self.foto_box)
         row = QHBoxLayout()
         self.export_btn = QPushButton('Export (CSV)')
         self.liste_btn = QPushButton('Artenliste je Fläche')
@@ -362,6 +394,12 @@ class GoKartDock(QDockWidget):
         self.delete_btn.clicked.connect(self.delete_selected)
         self.existing.currentRowChanged.connect(
             lambda r: self.delete_btn.setEnabled(r >= 0))
+        self.foto_list.currentItemChanged.connect(lambda it, _alt: self.foto_waehlen(it))
+        self.foto_save.clicked.connect(self.foto_kommentar_speichern)
+        self.foto_kommentar.returnPressed.connect(self.foto_kommentar_speichern)
+        self.foto_mic.clicked.connect(lambda: self.record(ziel='kommentar'))
+        self.foto_list.itemDoubleClicked.connect(
+            lambda it: QDesktopServices.openUrl(QUrl.fromLocalFile(it.data(Qt.UserRole))))
         self.export_btn.clicked.connect(self.export_csv)
         self.liste_btn.clicked.connect(self.export_artenliste)
         self.mic.clicked.connect(self.record)
@@ -640,6 +678,104 @@ class GoKartDock(QDockWidget):
             self.existing.addItem(item)
             count += 1
         self.existing.setToolTip(f'{count} Artnachweise auf {fid}')
+        self.show_fotos()
+
+    # ---------------------------------------------------------------- Standortfotos (Tabelle "fotos", Dateien unter fotos/)
+    def foto_layer(self):
+        """Tabelle fotos aus derselben GeoPackage wie die Artnachweise (muss nicht im Projekt sein)."""
+        an = self.obs_layer()
+        if an is None:
+            return None
+        gpkg = an.source().split('|', 1)[0]
+        lyr = QgsVectorLayer(f'{gpkg}|layername=fotos', 'gokart_fotos', 'ogr')
+        return lyr if lyr.isValid() and 'datei' in lyr.fields().names() else None
+
+    def fotos_fuer(self, flaeche, lyr=None):
+        lyr = lyr or self.foto_layer()
+        if lyr is None or flaeche is None:
+            return []
+        expr = QgsExpression.createFieldEqualityExpression('flaeche_id', str(flaeche))
+        fotos = [{'fid': f.id(), 'datei': val(f, 'datei'), 'kommentar': val(f, 'kommentar'),
+                  'am': val(f, 'aufgenommen_am'), 'lon': val(f, 'lon'), 'lat': val(f, 'lat')}
+                 for f in lyr.getFeatures(QgsFeatureRequest().setFilterExpression(expr))]
+        return sorted(fotos, key=lambda x: x['am'])
+
+    @staticmethod
+    def foto_pfad(datei):
+        return Path(QgsProject.instance().homePath()) / datei
+
+    def show_fotos(self, auswahl_fid=None):
+        self.foto_list.blockSignals(True)
+        self.foto_list.clear()
+        self.foto_list.blockSignals(False)
+        self.foto_box.setVisible(False)
+        flaeche = self.area_id()
+        fotos = self.fotos_fuer(flaeche) if flaeche is not None else []
+        self.foto_list.setVisible(bool(fotos))
+        if flaeche is None:
+            self.foto_info.setText('')
+            return
+        if not fotos:
+            self.foto_info.setText('Keine Standortfotos zu dieser Fläche (Aufnahme in QField über den Kamera-Knopf).')
+            return
+        texte = []
+        for i, ft in enumerate(fotos, 1):
+            pfad = self.foto_pfad(ft['datei'])
+            bild = QPixmap(str(pfad))
+            symbol = QIcon(bild.scaled(220, 220, Qt.KeepAspectRatio, Qt.SmoothTransformation)) if not bild.isNull() else QIcon()
+            it = QListWidgetItem(symbol, str(i) if not bild.isNull() else f'{i}: Datei fehlt')
+            it.setData(Qt.UserRole, str(pfad))
+            it.setData(Qt.UserRole + 1, ft['fid'])
+            it.setData(Qt.UserRole + 2, ft['kommentar'])
+            gps = f"\nGPS {ft['lat']}, {ft['lon']}" if ft['lat'] else ''
+            it.setToolTip(f"{ft['datei']}\n{ft['am'].replace('T', ' ')}{gps}\n{ft['kommentar']}")
+            self.foto_list.addItem(it)
+            if ft['kommentar']:
+                texte.append(f"{i}: {ft['kommentar']}")
+        for i in range(self.foto_list.count()):
+            if auswahl_fid is not None and self.foto_list.item(i).data(Qt.UserRole + 1) == auswahl_fid:
+                self.foto_list.setCurrentRow(i)
+        self.foto_info.setText(f'Standortfotos: {len(fotos)} – anklicken für Vorschau/Kommentar, Doppelklick öffnet' + ('\n' + '\n'.join(texte) if texte else ''))
+
+    def foto_waehlen(self, it):
+        self.foto_box.setVisible(it is not None)
+        if it is None:
+            return
+        bild = QPixmap(it.data(Qt.UserRole))
+        breite = max(240, self.foto_list.width() - 10)
+        self.foto_gross.setPixmap(bild.scaled(breite, 320, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                                  if not bild.isNull() else QPixmap())
+        if bild.isNull():
+            self.foto_gross.setText('Bilddatei nicht gefunden')
+        self.foto_kommentar.setText(it.data(Qt.UserRole + 2) or '')
+
+    def foto_kommentar_speichern(self):
+        it = self.foto_list.currentItem()
+        fl = self.foto_layer()
+        if it is None or fl is None:
+            return
+        fid = it.data(Qt.UserRole + 1)
+        text = self.foto_kommentar.text().strip()
+        idx = fl.fields().indexFromName('kommentar')
+        if not fl.startEditing() or not fl.changeAttributeValue(fid, idx, text or None) or not fl.commitChanges():
+            errors = '; '.join(fl.commitErrors())
+            fl.rollBack()
+            self.message('Kommentar nicht gespeichert: ' + errors)
+            return
+        self.message('Kommentar gespeichert.')
+        self.show_fotos(auswahl_fid=fid)
+
+    @staticmethod
+    def vorschau_uri(pfad, groesse=240):
+        """Kleines JPEG als data:-URI für die HTML-Artenliste."""
+        bild = QImage(str(pfad))
+        if bild.isNull():
+            return ''
+        bild = bild.scaled(groesse, groesse, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        puffer = QBuffer()
+        puffer.open(QIODevice.WriteOnly)
+        bild.save(puffer, 'JPG', 80)
+        return 'data:image/jpeg;base64,' + bytes(puffer.data().toBase64()).decode('ascii')
 
     def delete_selected(self):
         """Markierten Artnachweis der aktiven Fläche nach Rückfrage löschen."""
@@ -774,6 +910,13 @@ class GoKartDock(QDockWidget):
             for f in tx.getFeatures():
                 taxa[val(f, 'taxon_id')] = (val(f, 'autor_name'), val(f, 'rang'))
         fk = self.obs_fk()
+        fotos_je_flaeche = {}
+        fl = self.foto_layer()
+        if fl is not None:
+            for f in fl.getFeatures():
+                fotos_je_flaeche.setdefault(val(f, 'flaeche_id'), []).append({
+                    'datei': val(f, 'datei'), 'kommentar': val(f, 'kommentar'), 'am': val(f, 'aufgenommen_am'),
+                    'src': self.vorschau_uri(self.foto_pfad(val(f, 'datei')))})
         nachweise = []
         for f in layer.getFeatures():
             fid = val(f, fk)
@@ -782,20 +925,22 @@ class GoKartDock(QDockWidget):
             nachweise.append({'flaeche_id': fid, 'flaeche_name': name, 'flaeche_m2': groesse,
                               'taxon_id': val(f, 'taxon_id'), 'wiss': val(f, 'wissenschaftlicher_name'),
                               'autor': autor, 'deutsch': val(f, 'deutscher_name'), 'rang': rang,
-                              'eingabe': val(f, 'original_eingabe'), 'erfasst_am': val(f, 'erfasst_am')})
+                              'eingabe': val(f, 'original_eingabe'), 'erfasst_am': val(f, 'erfasst_am'),
+                              'bemerkung': val(f, 'bemerkung')})
         try:
             ziel = Path(filename).with_suffix('.html')
             projekt = QgsProject.instance().title() or Path(QgsProject.instance().fileName()).stem
-            n_fl, n_tx = html_schreiben(ziel, nachweise, 'Artenliste je Fläche', projekt)
+            n_fl, n_tx = html_schreiben(ziel, nachweise, 'Artenliste je Fläche', projekt,
+                                        fotos_je_flaeche=fotos_je_flaeche, flaechen_info=flaechen)
             csv_schreiben(ziel.with_suffix('.csv'), nachweise)
             self.message(f'Artenliste: {n_fl} Flächen, {n_tx} Taxa → {ziel} (+ .csv)')
-            from qgis.PyQt.QtCore import QUrl
-            from qgis.PyQt.QtGui import QDesktopServices
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(ziel)))
         except Exception as e:
             self.message('Artenliste fehlgeschlagen: ' + str(e))
 
-    def record(self):
+    def record(self, *_args, ziel='suche'):
+        """Vosk-Spracheingabe; ziel='suche' (Pflanzenname) oder 'kommentar' (Fotokommentar)."""
+        self.voice_ziel = ziel
         if self.voice and self.voice.isRunning():
             self.message('Aufnahme läuft bereits.')
             return
@@ -807,16 +952,25 @@ class GoKartDock(QDockWidget):
             self.settings.setValue('GoKart/vosk_model', path)
             model = path
         self.mic.setEnabled(False)
+        self.foto_mic.setEnabled(False)
         self.message('Mikrofon wird vorbereitet … noch nicht sprechen.')
         self.voice = VoiceThread(model, self)
         self.voice.status.connect(self.message)
         self.voice.ready.connect(lambda: self.message('● JETZT sprechen (max. 8 Sekunden).'))
         self.voice.result.connect(self.voice_result)
         self.voice.failure.connect(lambda err: self.message('Spracherkennung: ' + err))
-        self.voice.finished.connect(lambda: self.mic.setEnabled(True))
+        self.voice.finished.connect(lambda: (self.mic.setEnabled(True), self.foto_mic.setEnabled(True)))
         self.voice.start()
 
     def voice_result(self, text):
+        if getattr(self, 'voice_ziel', 'suche') == 'kommentar':
+            if text:
+                alt = self.foto_kommentar.text().strip()
+                self.foto_kommentar.setText((alt + ' ' if alt else '') + text)
+                self.message('Erkannt: ' + text + ' – prüfen und „Kommentar speichern“.')
+            else:
+                self.message('Nichts erkannt – nach „JETZT sprechen“ deutlich einsprechen.')
+            return
         self.query.setText(text)
         if text:
             self.message('Erkannt: ' + text + ' – Art bestätigen und speichern.')

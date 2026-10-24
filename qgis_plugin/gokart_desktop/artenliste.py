@@ -4,7 +4,10 @@ Reines Python ohne QGIS-Abhängigkeit, damit es sowohl vom Desktop-Plugin als au
 vom Kommandozeilen-Werkzeug qfield/werkzeuge/artenliste_export.py genutzt werden kann.
 
 Eingabe ist eine Liste von Nachweisen (dicts) mit den Schlüsseln:
-    flaeche_id, flaeche_name, flaeche_m2, taxon_id, wiss, autor, deutsch, rang, eingabe, erfasst_am
+    flaeche_id, flaeche_name, flaeche_m2, taxon_id, wiss, autor, deutsch, rang, eingabe, erfasst_am,
+    optional bemerkung.
+Standortfotos kommen getrennt: fotos_je_flaeche = {flaeche_id: [{datei, kommentar, am, src}]}
+(src = Bild-URL/data:-URI für die Vorschau), flaechen_info = {flaeche_id: (name, m2)}.
 Fehlende Werte dürfen None oder '' sein.
 """
 import csv
@@ -95,7 +98,30 @@ def _wiss_html(a):
     return s
 
 
-def html_schreiben(pfad, nachweise, titel='GoKart – Artenliste je Fläche', projekt=''):
+def _zusatz_html(a):
+    """Bemerkung unter einer Artzeile."""
+    if _txt(a.get('bemerkung')):
+        return f'<div class="bem">💬 {html.escape(_txt(a.get("bemerkung")))}</div>'
+    return ''
+
+
+def _fotos_html(fotos):
+    """Standortfotos einer Fläche als Vorschaukarten mit Kommentar."""
+    if not fotos:
+        return ''
+    karten = []
+    for ft in sorted(fotos, key=lambda x: _txt(x.get('am'))):
+        bild = (f'<img src="{html.escape(ft["src"])}" alt="">' if ft.get('src')
+                else f'<div>📷 {html.escape(_txt(ft.get("datei")))}</div>')
+        text = html.escape(_txt(ft.get('kommentar'))) or '&nbsp;'
+        karten.append(f'<div class="foto">{bild}<b>{_datum(ft.get("am"))}</b> {text}</div>')
+    return '<div class="fototitel">Standortfotos</div><div class="fotos">' + ''.join(karten) + '</div>'
+
+
+def html_schreiben(pfad, nachweise, titel='GoKart – Artenliste je Fläche', projekt='',
+                   fotos_je_flaeche=None, flaechen_info=None):
+    fotos_je_flaeche = {_txt(k): v for k, v in (fotos_je_flaeche or {}).items()}
+    flaechen_info = {_txt(k): v for k, v in (flaechen_info or {}).items()}
     gruppen = gruppieren(nachweise)
     gesamt = gesamtliste(gruppen)
     stand = datetime.now().strftime('%d.%m.%Y %H:%M')
@@ -110,6 +136,9 @@ def html_schreiben(pfad, nachweise, titel='GoKart – Artenliste je Fläche', pr
  th{{background:#eef5f0;font-weight:600}} td.nr,th.nr{{width:2.2em;text-align:right;color:#666}}
  td.dat{{white-space:nowrap;color:#555;width:6.5em}} .autor{{color:#666;font-size:9pt}} .rang{{color:#888;font-size:9pt}}
  .summe{{color:#555;font-size:9.5pt}} td.x{{text-align:center}} th.v{{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:400;font-size:8.5pt;white-space:nowrap}}
+ .fotos{{display:flex;flex-wrap:wrap;gap:6px;margin:3px 0 2px}} .foto{{width:120px;font-size:8.5pt;color:#555}}
+ .fototitel{{font-size:9.5pt;font-weight:600;color:#167d50;margin-top:6px}}
+ .foto img{{width:120px;height:90px;object-fit:cover;border-radius:3px;display:block}} .bem{{font-size:9pt;color:#444}}
  @media print{{body{{margin:0}} h2{{break-after:avoid}} tr{{break-inside:avoid}}}}
 </style></head><body>
 <h1>{html.escape(titel)}</h1>
@@ -121,8 +150,18 @@ def html_schreiben(pfad, nachweise, titel='GoKart – Artenliste je Fläche', pr
         for i, a in enumerate(f['arten'], 1):
             o.append(f'<tr><td class="nr">{i}</td><td>{_wiss_html(a)}</td>'
                      f'<td>{html.escape(_txt(a.get("deutsch")))}</td><td class="dat">{_datum(a.get("erfasst_am"))}</td></tr>')
+            zusatz = _zusatz_html(a)
+            if zusatz:
+                o.append(f'<tr><td></td><td colspan="3">{zusatz}</td></tr>')
         n = len(f['arten'])
         o.append(f'</table><div class="summe">{n} {"Taxon" if n == 1 else "Taxa"}</div>')
+        o.append(_fotos_html(fotos_je_flaeche.get(fid)))
+
+    # Flächen mit Fotos, aber ohne Artnachweis
+    for fid in sorted((k for k in fotos_je_flaeche if k not in gruppen and fotos_je_flaeche[k]), key=_flaeche_sortkey):
+        name, m2 = flaechen_info.get(fid, ('', None))
+        o.append(f'<h2>{html.escape(_flaechen_titel(fid, {"name": _txt(name), "m2": m2}))}</h2>'
+                 '<div class="summe">Keine Arten erfasst</div>' + _fotos_html(fotos_je_flaeche[fid]))
 
     # Gesamtartenliste mit Stetigkeit (Anzahl Flächen) – wie Anhang einer Kartierung
     o.append('<h2>Gesamtartenliste</h2><table><tr><th class="nr">Nr.</th><th>Wissenschaftlicher Name</th>'
@@ -155,9 +194,9 @@ def csv_schreiben(pfad, nachweise):
     with open(pfad, 'w', newline='', encoding='utf-8-sig') as fh:
         w = csv.writer(fh, delimiter=';')
         w.writerow(['Flächen-ID', 'Fläche', 'Fläche m²', 'Nr.', 'Wissenschaftlicher Name', 'Autor',
-                    'Deutscher Name', 'Rang', 'Erfasst am'])
+                    'Deutscher Name', 'Rang', 'Erfasst am', 'Bemerkung'])
         for fid, f in gruppen.items():
             for i, a in enumerate(f['arten'], 1):
                 w.writerow([fid, f['name'], _txt(f['m2']).replace('.', ','), i, _txt(a.get('wiss')), _autor(a),
                             _txt(a.get('deutsch')), _txt(a.get('rang')),
-                            _txt(a.get('erfasst_am')).replace('T', ' ')])
+                            _txt(a.get('erfasst_am')).replace('T', ' '), _txt(a.get('bemerkung'))])

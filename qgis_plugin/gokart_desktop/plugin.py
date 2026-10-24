@@ -4,9 +4,14 @@ Alle Schreiboperationen gehen an den geladenen artnachweise-Layer.
 Keine Änderung am Quellprojekt oder den Layerdefinitionen.
 """
 
-# GoKart: Python-Umgebung einbinden
+# GoKart: optionale Python-Umgebung (Linux: ~/gokart-venv) für vosk/sounddevice einbinden.
+# Unter Windows stattdessen in der OSGeo4W-Shell: python -m pip install vosk sounddevice
 import site
-site.addsitedir('/home/emu/gokart-venv/lib/python3.12/site-packages')
+import sys as _sys
+from pathlib import Path as _Path
+for _sp in (_Path.home() / 'gokart-venv' / 'lib').glob('python3*/site-packages'):
+    if _sp.is_dir() and _sys.platform != 'win32':
+        site.addsitedir(str(_sp))
 
 import csv
 import hashlib
@@ -18,7 +23,7 @@ from pathlib import Path
 
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QSettings, QTimer
 from qgis.PyQt.QtWidgets import (QAction, QComboBox, QDockWidget, QFileDialog,
-    QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox, QPushButton, QCheckBox,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QCheckBox,
     QVBoxLayout, QWidget, QDialog, QDialogButtonBox, QFormLayout)
 from qgis.core import (QgsCoordinateTransform, QgsFeature, QgsGeometry,
     QgsPointXY, QgsProject, QgsMapLayerType, QgsExpression, QgsFeatureRequest,
@@ -247,7 +252,8 @@ class VoiceThread(QThread):
                 self.status.emit('Sprachmodell wird geladen …')
                 model = Model(self.model_path)
                 _VOSK_MODELS[self.model_path] = model
-            # Logitech-Webcam anhand ihrer USB-Kennung auswählen
+            # Bevorzugt die Logitech-Webcam (USB-Kennung steht nur unter Linux im Namen),
+            # sonst das Standard-Mikrofon des Systems (Windows)
             devices = sd.query_devices()
             webcam = next(
                 (i for i, d in enumerate(devices)
@@ -255,8 +261,8 @@ class VoiceThread(QThread):
                  and d['max_input_channels'] > 0),
                 None
             )
-            if webcam is None:
-                raise RuntimeError('Webcam-Mikrofon nicht gefunden.')
+            if webcam is None and not any(d['max_input_channels'] > 0 for d in devices):
+                raise RuntimeError('Kein Mikrofon gefunden.')
             rate = 16000
             recognizer = KaldiRecognizer(model, rate)
             q = queue.Queue()
@@ -325,6 +331,9 @@ class GoKartDock(QDockWidget):
         layout.addWidget(QLabel('Bereits erfasste Arten dieser Fläche'))
         self.existing = QListWidget()
         layout.addWidget(self.existing)
+        self.delete_btn = QPushButton('Markierte Art löschen')
+        self.delete_btn.setEnabled(False)
+        layout.addWidget(self.delete_btn)
         row = QHBoxLayout()
         self.export_btn = QPushButton('Export (CSV)')
         self.liste_btn = QPushButton('Artenliste je Fläche')
@@ -350,6 +359,9 @@ class GoKartDock(QDockWidget):
             lambda: self.search_timer.start()
         )
         self.save_btn.clicked.connect(self.save)
+        self.delete_btn.clicked.connect(self.delete_selected)
+        self.existing.currentRowChanged.connect(
+            lambda r: self.delete_btn.setEnabled(r >= 0))
         self.export_btn.clicked.connect(self.export_csv)
         self.liste_btn.clicked.connect(self.export_artenliste)
         self.mic.clicked.connect(self.record)
@@ -623,9 +635,36 @@ class GoKartDock(QDockWidget):
             return
         count = 0
         for f in layer.getFeatures(self.obs_request(fid)):
-            self.existing.addItem(val(f, 'deutscher_name') or val(f, 'wissenschaftlicher_name'))
+            item = QListWidgetItem(val(f, 'deutscher_name') or val(f, 'wissenschaftlicher_name'))
+            item.setData(Qt.UserRole, f.id())          # Feature-ID zum Löschen merken
+            self.existing.addItem(item)
             count += 1
         self.existing.setToolTip(f'{count} Artnachweise auf {fid}')
+
+    def delete_selected(self):
+        """Markierten Artnachweis der aktiven Fläche nach Rückfrage löschen."""
+        layer = self.obs_layer()
+        item = self.existing.currentItem()
+        if not layer or item is None:
+            return
+        if layer.isEditable():
+            self.message('Artnachweise sind im Bearbeitungsmodus. Bitte erst speichern oder verwerfen.')
+            return
+        name = item.text()
+        if QMessageBox.question(self, 'Artnachweis löschen',
+                                f'„{name}“ von dieser Fläche löschen?',
+                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        if not layer.startEditing():
+            self.message('Layer kann nicht bearbeitet werden.')
+            return
+        if not layer.deleteFeature(item.data(Qt.UserRole)) or not layer.commitChanges():
+            errors = '; '.join(layer.commitErrors())
+            layer.rollBack()
+            self.message('Löschen fehlgeschlagen: ' + errors)
+            return
+        self.refresh_existing()
+        self.message(f'Gelöscht: {name}')
 
     def save(self):
         layer = self.obs_layer()

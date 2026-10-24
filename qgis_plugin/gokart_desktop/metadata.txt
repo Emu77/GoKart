@@ -1,7 +1,7 @@
 [general]
 name=GoKart Desktop
 qgisMinimumVersion=3.22
-version=0.2.1
+version=0.3.1
 Author=GoKart Projekt
 email=
 description=Pflanzenarten Flächen zuordnen; Offline-Spracherkennung optional über Vosk

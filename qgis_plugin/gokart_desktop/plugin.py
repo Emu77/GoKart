@@ -23,7 +23,7 @@ from pathlib import Path
 
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QSettings, QTimer, QSize, QUrl, QBuffer, QIODevice
 from qgis.PyQt.QtGui import QDesktopServices, QIcon, QImage, QPixmap
-from qgis.PyQt.QtWidgets import (QAction, QComboBox, QDockWidget, QFileDialog,
+from qgis.PyQt.QtWidgets import (QAction, QComboBox, QDockWidget, QFileDialog, QScrollArea, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QCheckBox,
     QVBoxLayout, QWidget, QDialog, QDialogButtonBox, QFormLayout)
 from qgis.core import (QgsCoordinateTransform, QgsFeature, QgsGeometry,
@@ -340,10 +340,10 @@ class GoKartDock(QDockWidget):
         layout.addWidget(self.foto_info)
         self.foto_list = QListWidget()      # Standortfotos der aktiven Fläche (Doppelklick öffnet)
         self.foto_list.setViewMode(QListWidget.IconMode)
-        self.foto_list.setIconSize(QSize(110, 110))
+        self.foto_list.setIconSize(QSize(80, 80))
         self.foto_list.setResizeMode(QListWidget.Adjust)
         self.foto_list.setMovement(QListWidget.Static)
-        self.foto_list.setFixedHeight(150)
+        self.foto_list.setFixedHeight(112)
         self.foto_list.setVisible(False)
         layout.addWidget(self.foto_list)
         # Markiertes Foto: große Vorschau + Kommentar (tippen oder einsprechen)
@@ -352,13 +352,14 @@ class GoKartDock(QDockWidget):
         fb.setContentsMargins(0, 0, 0, 0)
         self.foto_gross = QLabel()
         self.foto_gross.setAlignment(Qt.AlignCenter)
-        self.foto_gross.setMinimumHeight(200)
+        self.foto_gross.setMinimumHeight(160)
         self.foto_gross.setToolTip('Doppelklick in der Fotoleiste öffnet das Bild in voller Größe')
         fb.addWidget(self.foto_gross)
         row = QHBoxLayout()
         self.foto_kommentar = QLineEdit()
         self.foto_kommentar.setPlaceholderText('Kommentar zum Standort …')
-        self.foto_mic = QPushButton('● Sprechen')
+        fb.addWidget(QLabel('Kommentar zum Foto (tippen oder einsprechen):'))
+        self.foto_mic = QPushButton('● Kommentar sprechen')
         row.addWidget(self.foto_kommentar)
         row.addWidget(self.foto_mic)
         fb.addLayout(row)
@@ -376,7 +377,12 @@ class GoKartDock(QDockWidget):
         self.status = QLabel('QGIS-Projekt mit gokart.gpkg öffnen.')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.setWidget(body)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(body)
+        self.setWidget(scroll)
         self.reload_btn.clicked.connect(self.reload)
         self.show_unnamed.toggled.connect(self.reload)
         self.pick_btn.clicked.connect(self.pick_selected)
@@ -743,7 +749,7 @@ class GoKartDock(QDockWidget):
             return
         bild = QPixmap(it.data(Qt.UserRole))
         breite = max(240, self.foto_list.width() - 10)
-        self.foto_gross.setPixmap(bild.scaled(breite, 320, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.foto_gross.setPixmap(bild.scaled(breite, 240, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                                   if not bild.isNull() else QPixmap())
         if bild.isNull():
             self.foto_gross.setText('Bilddatei nicht gefunden')
@@ -957,13 +963,13 @@ class GoKartDock(QDockWidget):
         self.voice = VoiceThread(model, self)
         self.voice.status.connect(self.message)
         self.voice.ready.connect(lambda: self.message('● JETZT sprechen (max. 8 Sekunden).'))
-        self.voice.result.connect(self.voice_result)
+        self.voice.result.connect(lambda text, z=ziel: self.voice_result(text, z))
         self.voice.failure.connect(lambda err: self.message('Spracherkennung: ' + err))
         self.voice.finished.connect(lambda: (self.mic.setEnabled(True), self.foto_mic.setEnabled(True)))
         self.voice.start()
 
-    def voice_result(self, text):
-        if getattr(self, 'voice_ziel', 'suche') == 'kommentar':
+    def voice_result(self, text, ziel='suche'):
+        if ziel == 'kommentar':
             if text:
                 alt = self.foto_kommentar.text().strip()
                 self.foto_kommentar.setText((alt + ' ' if alt else '') + text)

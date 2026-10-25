@@ -54,6 +54,15 @@ Geplante Funktionen:
 - `qfield/test/` – Suchtest (Node) und QField-Simulation (PySide6)
 - `gokart_qfield/` – fertiges QField-Projekt mit eigenen Flächen (`gokart.gpkg` nicht im Repo, Plugin nur Kopie – siehe dortige README)
 
+## Anleitung
+
+Detaillierte Anleitung zum QField-Plugin (PDF):
+[docs/GoKart_QField_Anleitung.pdf](docs/GoKart_QField_Anleitung.pdf)
+
+Inhalt: Voraussetzungen, Datenmodell, Projekt bauen/einrichten,
+Übertragung aufs Gerät, Arterfassung im Gelände, Standortfotos,
+Abgleich PC ↔ Tablet, Artenliste-Export, Fehlerbehebung.
+
 ## Technologien
 
 - JavaScript / QML

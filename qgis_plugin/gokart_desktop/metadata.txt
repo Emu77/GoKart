@@ -1,10 +1,11 @@
 [general]
 name=GoKart Desktop
 qgisMinimumVersion=3.22
-version=0.4.0
+version=0.5.0
 Author=GoKart Projekt
 email=
-description=Pflanzenarten Flächen zuordnen; Offline-Spracherkennung optional über Vosk
+description=Pflanzenarten und Biotoptypen (Bund/Länder-Schlüssel) Flächen zuordnen; Offline-Spracherkennung optional über Vosk
 about=QGIS Desktop Plugin für Linux und Windows. GeoPackage wird im QGIS-Projekt eingebunden.
 category=Plugins
 experimental=True
+changelog=0.5.0: Biotoptypen – Schlüssel (Bund/Länder) im Einrichtungsdialog wählen, Kataloge einspielen, Haupt-/Nebenbiotop je Fläche erfassen (Text oder Sprache)

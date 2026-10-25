@@ -31,6 +31,8 @@ from qgis.core import (QgsCoordinateTransform, QgsFeature, QgsGeometry,
     QgsRelation, QgsVectorLayer, QgsExpressionContextUtils as ECU)
 from qgis.gui import QgsMapLayerComboBox, QgsFieldComboBox
 
+from . import biotope as B
+
 try:  # QGIS >= 3.34
     from qgis.core import Qgis
     F_POLY, F_VECTOR = Qgis.LayerFilter.PolygonLayer, Qgis.LayerFilter.VectorLayer
@@ -46,6 +48,7 @@ VAR_OBS_LAYER = 'gokart_nachweis_layer'     # Layer-ID der Artnachweise
 VAR_OBS_FK = 'gokart_nachweis_fk'           # Fremdschlüssel in den Artnachweisen
 VAR_RELATION = 'gokart_relation'
 RELATION_ID = 'gokart_flaeche_nachweise'
+BIOTOP_RELATION_ID = 'gokart_flaeche_biotope'
 LABEL_FIELDS = ('Raum', 'raum', 'name', 'Name', 'bezeichnung', 'Bezeichnung')
 
 
@@ -93,6 +96,18 @@ def is_empty(v):
     return v is None or str(v) in ('', 'NULL')
 
 
+def biotop_layer_laden(gpkg):
+    """Biotop-Tabellen als Layer ins Projekt holen (falls noch nicht da), Katalog schreibgeschützt."""
+    p = QgsProject.instance()
+    for t in (B.T_ZUORDNUNG, B.T_TYPEN, B.T_SCHLUESSEL):
+        if p.mapLayersByName(t):
+            continue
+        lyr = QgsVectorLayer(f'{gpkg}|layername={t}', t, 'ogr')
+        if lyr.isValid():
+            lyr.setReadOnly(t != B.T_ZUORDNUNG)
+            p.addMapLayer(lyr)
+
+
 class GoKartSetupDialog(QDialog):
     """Legt fest, über welche Felder Fläche und Artnachweis verknüpft sind."""
 
@@ -114,6 +129,12 @@ class GoKartSetupDialog(QDialog):
         self.make_relation.setChecked(True)
         self.info = QLabel()
         self.info.setWordWrap(True)
+        self.biotop_key = QComboBox()
+        self.biotop_import = QPushButton('Kataloge einspielen / aktualisieren')
+        self.biotop_import.setToolTip('Biotoptypen-Kataloge (Bund/Länder) aus dem Plugin-Ordner biotope_kataloge '
+                                      'in die GeoPackage der Artnachweise übernehmen und als Layer laden')
+        self.biotop_info = QLabel()
+        self.biotop_info.setWordWrap(True)
 
         form.addRow(QLabel('<b>Flächen</b>'))
         form.addRow('Layer', self.area_layer)
@@ -124,6 +145,10 @@ class GoKartSetupDialog(QDialog):
         form.addRow('Verweis auf Fläche', self.obs_fk)
         form.addRow(self.make_relation)
         form.addRow(self.info)
+        form.addRow(QLabel('<b>Biotoptypen</b>'))
+        form.addRow('Schlüssel', self.biotop_key)
+        form.addRow(self.biotop_import)
+        form.addRow(self.biotop_info)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.apply)
         buttons.rejected.connect(self.reject)
@@ -133,7 +158,10 @@ class GoKartSetupDialog(QDialog):
         self.obs_layer.layerChanged.connect(lambda l: self.obs_fk.setLayer(l))
         self.area_key.fieldChanged.connect(self.check)
         self.obs_fk.fieldChanged.connect(self.check)
+        self.obs_layer.layerChanged.connect(lambda _l: self.fill_biotop_keys())
+        self.biotop_import.clicked.connect(self.import_catalogs)
         self.prefill()
+        self.fill_biotop_keys()
 
     def prefill(self):
         fl = find_layer(project_var(VAR_AREA_LAYER))
@@ -153,6 +181,47 @@ class GoKartSetupDialog(QDialog):
         self.obs_fk.setLayer(self.obs_layer.currentLayer())
         self.obs_fk.setField(project_var(VAR_OBS_FK) or 'flaeche_id')
         self.check()
+
+    def obs_gpkg(self):
+        nl = self.obs_layer.currentLayer()
+        if nl is None:
+            return None
+        datei = nl.source().split('|', 1)[0]
+        return datei if datei.lower().endswith('.gpkg') else None
+
+    def fill_biotop_keys(self):
+        """Schlüssel aus der GeoPackage der Artnachweise anbieten (biotop_schluessel)."""
+        aktuell = self.biotop_key.currentData() or project_var(B.VAR_SCHLUESSEL)
+        self.biotop_key.clear()
+        self.biotop_key.addItem('– keiner –', '')
+        gpkg = self.obs_gpkg()
+        liste = B.schluessel_liste(gpkg) if gpkg else []
+        for s, name, n, voll in liste:
+            self.biotop_key.addItem(f'{s} – {name} ({n} Typen{"" if voll else ", unvollständig"})', s)
+        i = self.biotop_key.findData(aktuell)
+        self.biotop_key.setCurrentIndex(i if i >= 0 else (1 if len(liste) == 1 else 0))
+        if not gpkg:
+            self.biotop_info.setText('Artnachweise liegen nicht in einer GeoPackage – Biotoptypen nicht möglich.')
+        elif not liste:
+            self.biotop_info.setText('Noch keine Kataloge in der GeoPackage – „Kataloge einspielen“.')
+        else:
+            self.biotop_info.setText(f'{len(liste)} Schlüssel in {Path(gpkg).name}. '
+                                     f'Weitere Länder: biotope_katalog_import.py, dann erneut einspielen.')
+        self.biotop_import.setEnabled(bool(gpkg))
+
+    def import_catalogs(self):
+        gpkg = self.obs_gpkg()
+        if not gpkg:
+            return
+        try:
+            erg = B.kataloge_einspielen(gpkg)
+        except Exception as e:
+            QMessageBox.warning(self, 'GoKart', f'Einspielen fehlgeschlagen: {e}')
+            return
+        biotop_layer_laden(gpkg)
+        self.fill_biotop_keys()
+        self.biotop_info.setText('Eingespielt: ' + ', '.join(
+            f'{s} ({n}{"" if v else ", unvollständig"})' for s, (n, v, _) in sorted(erg.items())))
 
     def on_area_layer(self, layer):
         self.area_key.setLayer(layer)
@@ -194,8 +263,11 @@ class GoKartSetupDialog(QDialog):
         ECU.setProjectVariable(p, VAR_AREA_LABEL, self.area_label.currentField() or '')
         ECU.setProjectVariable(p, VAR_OBS_LAYER, nl.id())
         ECU.setProjectVariable(p, VAR_OBS_FK, fk)
+        ECU.setProjectVariable(p, B.VAR_SCHLUESSEL, self.biotop_key.currentData() or '')
         if self.make_relation.isChecked() and not self.write_relation(fl, key, nl, fk):
             return
+        if self.make_relation.isChecked():
+            self.write_biotop_relation(fl, key)
         p.setDirty(True)
         self.accept()
 
@@ -228,6 +300,22 @@ class GoKartSetupDialog(QDialog):
         rm.addRelation(rel)
         ECU.setProjectVariable(QgsProject.instance(), VAR_RELATION, RELATION_ID)
         return True
+
+    def write_biotop_relation(self, fl, key):
+        """Fläche 1:n Biotop-Zuordnungen – damit QField sie im Flächenformular zeigt."""
+        zl = next(iter(QgsProject.instance().mapLayersByName(B.T_ZUORDNUNG)), None)
+        if zl is None:
+            return
+        rm = QgsProject.instance().relationManager()
+        rel = QgsRelation()
+        rel.setId(BIOTOP_RELATION_ID)
+        rel.setName('Fläche → Biotoptypen')
+        rel.setReferencedLayer(fl.id())
+        rel.setReferencingLayer(zl.id())
+        rel.addFieldPair('flaeche_id', key)
+        if rel.isValid():
+            rm.removeRelation(BIOTOP_RELATION_ID)
+            rm.addRelation(rel)
 
 
 _VOSK_MODELS = {}  # Modell nur einmal laden (große Modelle brauchen viele Sekunden)
@@ -297,6 +385,10 @@ class GoKartDock(QDockWidget):
         self.area_source = None
         self.area_lookup = {}
         self.voice = None
+        self.voice_ziel = 'suche'
+        self.biotop_typen = []
+        self.biotop_matches = []
+        self.biotop_zuordnungen = []
         self.settings = QSettings()
         body = QWidget()
         layout = QVBoxLayout(body)
@@ -335,6 +427,41 @@ class GoKartDock(QDockWidget):
         self.delete_btn = QPushButton('Markierte Art löschen')
         self.delete_btn.setEnabled(False)
         layout.addWidget(self.delete_btn)
+        # --- Biotoptypen der aktiven Fläche (Schlüssel aus Projektvariable gokart_biotop_schluessel)
+        self.biotop_box = QWidget()
+        bb = QVBoxLayout(self.biotop_box)
+        bb.setContentsMargins(0, 6, 0, 0)
+        self.biotop_titel = QLabel('Biotoptyp')
+        bb.addWidget(self.biotop_titel)
+        row = QHBoxLayout()
+        self.biotop_query = QLineEdit()
+        self.biotop_query.setPlaceholderText('Code oder Name, z. B. WMy / Knick')
+        self.biotop_mic = QPushButton('● Sprechen')
+        row.addWidget(self.biotop_query)
+        row.addWidget(self.biotop_mic)
+        bb.addLayout(row)
+        self.biotop_results = QListWidget()
+        self.biotop_results.setMinimumHeight(110)
+        bb.addWidget(self.biotop_results)
+        row = QHBoxLayout()
+        self.biotop_haupt = QPushButton('Als Hauptbiotop')
+        self.biotop_neben = QPushButton('Als Nebenbiotop')
+        row.addWidget(self.biotop_haupt)
+        row.addWidget(self.biotop_neben)
+        bb.addLayout(row)
+        self.biotop_liste = QListWidget()
+        self.biotop_liste.setMaximumHeight(110)
+        bb.addWidget(self.biotop_liste)
+        row = QHBoxLayout()
+        self.biotop_rolle = QPushButton('Haupt ↔ Neben')
+        self.biotop_weg = QPushButton('Entfernen')
+        self.biotop_rolle.setEnabled(False)
+        self.biotop_weg.setEnabled(False)
+        row.addWidget(self.biotop_rolle)
+        row.addWidget(self.biotop_weg)
+        bb.addLayout(row)
+        self.biotop_box.setVisible(False)
+        layout.addWidget(self.biotop_box)
         self.foto_info = QLabel('')
         self.foto_info.setWordWrap(True)
         layout.addWidget(self.foto_info)
@@ -409,6 +536,19 @@ class GoKartDock(QDockWidget):
         self.export_btn.clicked.connect(self.export_csv)
         self.liste_btn.clicked.connect(self.export_artenliste)
         self.mic.clicked.connect(self.record)
+        self.biotop_timer = QTimer(self)
+        self.biotop_timer.setSingleShot(True)
+        self.biotop_timer.setInterval(250)
+        self.biotop_timer.timeout.connect(self.biotop_search)
+        self.biotop_query.textChanged.connect(lambda: self.biotop_timer.start())
+        self.biotop_query.returnPressed.connect(self.biotop_enter)
+        self.biotop_mic.clicked.connect(lambda: self.record(ziel='biotop'))
+        self.biotop_haupt.clicked.connect(lambda: self.biotop_save('Haupt'))
+        self.biotop_neben.clicked.connect(lambda: self.biotop_save('Neben'))
+        self.biotop_rolle.clicked.connect(self.biotop_toggle)
+        self.biotop_weg.clicked.connect(self.biotop_delete)
+        self.biotop_liste.currentRowChanged.connect(
+            lambda r: (self.biotop_rolle.setEnabled(r >= 0), self.biotop_weg.setEnabled(r >= 0)))
         self.iface.currentLayerChanged.connect(self.on_layer_changed)
         QgsProject.instance().layersAdded.connect(self.on_project_layers_changed)
         QgsProject.instance().layersRemoved.connect(self.on_project_layers_changed)
@@ -534,6 +674,7 @@ class GoKartDock(QDockWidget):
                     if item:
                         for field in fields:
                             item['terms'] += ' | ' + norm(val(f, field))
+        self.biotope_laden()
         self.refresh_existing()
         self.search()
         if problem:
@@ -685,6 +826,167 @@ class GoKartDock(QDockWidget):
             count += 1
         self.existing.setToolTip(f'{count} Artnachweise auf {fid}')
         self.show_fotos()
+        self.biotope_anzeigen()
+
+    # ---------------------------------------------------------------- Biotoptypen
+    def biotop_layer(self, tabelle):
+        """Projektlayer, sonst direkt aus der GeoPackage der Artnachweise (muss nicht im Projekt sein)."""
+        lyr = self.layer(tabelle)
+        if lyr is not None and lyr.isValid():
+            return lyr
+        an = self.obs_layer()
+        if an is None:
+            return None
+        gpkg = an.source().split('|', 1)[0]
+        lyr = QgsVectorLayer(f'{gpkg}|layername={tabelle}', 'gokart_' + tabelle, 'ogr')
+        return lyr if lyr.isValid() and 'code' in lyr.fields().names() else None
+
+    def biotop_schluessel(self):
+        return project_var(B.VAR_SCHLUESSEL).upper()
+
+    def biotope_laden(self):
+        """Katalog des geltenden Schlüssels für die Suche laden."""
+        self.biotop_typen = []
+        s = self.biotop_schluessel()
+        kat = self.biotop_layer(B.T_TYPEN)
+        if kat is not None and s:
+            req = QgsFeatureRequest().setFilterExpression(QgsExpression.createFieldEqualityExpression('schluessel', s))
+            for f in kat.getFeatures(req):
+                e = val(f, 'ebene')
+                self.biotop_typen.append({'code': val(f, 'code'), 'name': val(f, 'name'), 'nr': val(f, 'nr'),
+                                          'ebene': int(float(e)) if e else 0, 'bund_code': val(f, 'bund_code'),
+                                          'ffh_lrt': val(f, 'ffh_lrt')})
+        bereit = bool(self.biotop_typen) and self.biotop_layer(B.T_ZUORDNUNG) is not None
+        self.biotop_box.setVisible(bereit or bool(s) or kat is not None)
+        if not s:
+            self.biotop_titel.setText('Biotoptyp: Schlüssel unter „Einrichten…“ wählen')
+        elif not self.biotop_typen:
+            self.biotop_titel.setText(f'Biotoptyp: Katalog {s} fehlt – „Einrichten…“ → „Kataloge einspielen“')
+        else:
+            self.biotop_titel.setText(f'Biotoptypen dieser Fläche (Schlüssel {s})')
+        for w in (self.biotop_query, self.biotop_mic, self.biotop_haupt, self.biotop_neben):
+            w.setEnabled(bereit)
+        self.biotop_search()
+
+    def biotop_search(self):
+        self.biotop_results.clear()
+        self.biotop_matches = B.suchen(self.biotop_typen, self.biotop_query.text(), 6)
+        for t in self.biotop_matches:
+            extra = ' · '.join(x for x in (f"FFH {t['ffh_lrt']}" if t['ffh_lrt'] else '',
+                                           f"Bund {t['bund_code']}" if t['bund_code'] else '') if x)
+            self.biotop_results.addItem(f"{t['code']} – {t['name']}" + (f'  ({extra})' if extra else ''))
+        if self.biotop_matches and B.bewerten(self.biotop_query.text(), self.biotop_matches[0]) >= 0.97:
+            self.biotop_results.setCurrentRow(0)
+
+    def biotop_enter(self):
+        self.biotop_timer.stop()
+        self.biotop_search()
+        if self.biotop_results.currentRow() >= 0:
+            hat_haupt = any(z['rolle'] == 'Haupt' and z['schluessel'] == self.biotop_schluessel()
+                            for z in self.biotop_zuordnungen)
+            self.biotop_save('Neben' if hat_haupt else 'Haupt')
+
+    def biotope_anzeigen(self):
+        self.biotop_liste.clear()
+        self.biotop_zuordnungen = []
+        zl, flaeche = self.biotop_layer(B.T_ZUORDNUNG), self.area_id()
+        if zl is None or flaeche is None:
+            return
+        expr = QgsExpression.createFieldEqualityExpression('flaeche_id', str(flaeche))
+        for f in zl.getFeatures(QgsFeatureRequest().setFilterExpression(expr)):
+            self.biotop_zuordnungen.append({'fid': f.id(), 'schluessel': val(f, 'schluessel'), 'code': val(f, 'code'),
+                                            'name': val(f, 'name'), 'rolle': val(f, 'rolle') or 'Neben'})
+        self.biotop_zuordnungen.sort(key=lambda z: (z['rolle'] != 'Haupt', z['code']))
+        for z in self.biotop_zuordnungen:
+            fremd = f"  [{z['schluessel']}]" if z['schluessel'] != self.biotop_schluessel() else ''
+            it = QListWidgetItem(('● ' if z['rolle'] == 'Haupt' else '○ ') + f"{z['code']} – {z['name']}{fremd}")
+            if z['rolle'] == 'Haupt':
+                schrift = it.font()
+                schrift.setBold(True)
+                it.setFont(schrift)
+            self.biotop_liste.addItem(it)
+
+    def biotop_aendern(self, aktion):
+        """aktion(layer) im Bearbeitungsmodus ausführen und sofort speichern."""
+        zl = self.biotop_layer(B.T_ZUORDNUNG)
+        if zl is None:
+            self.message('Tabelle biotopzuordnung fehlt – „Einrichten…“ → „Kataloge einspielen“.')
+            return False
+        if zl.isEditable():
+            self.message('Biotop-Zuordnungen sind im Bearbeitungsmodus. Bitte erst speichern oder verwerfen.')
+            return False
+        if not zl.startEditing():
+            self.message('Layer kann nicht bearbeitet werden.')
+            return False
+        if not aktion(zl) or not zl.commitChanges():
+            fehler = '; '.join(zl.commitErrors())
+            zl.rollBack()
+            self.message('Speichern fehlgeschlagen: ' + fehler)
+            return False
+        return True
+
+    @staticmethod
+    def _rolle(zl, fid, rolle):
+        return zl.changeAttributeValue(fid, zl.fields().indexFromName('rolle'), rolle)
+
+    def biotop_save(self, rolle):
+        flaeche = self.area_id()
+        i = self.biotop_results.currentRow()
+        if flaeche is None or i < 0 or i >= len(self.biotop_matches):
+            self.message('Fläche und Biotoptyp auswählen.')
+            return
+        t, s = self.biotop_matches[i], self.biotop_schluessel()
+        vorhanden = next((z for z in self.biotop_zuordnungen if z['schluessel'] == s and z['code'] == t['code']), None)
+        if vorhanden and vorhanden['rolle'] == rolle:
+            self.message(f"{t['code']} ist bereits als {rolle}biotop erfasst.")
+            return
+        alte = [z for z in self.biotop_zuordnungen if rolle == 'Haupt' and z['rolle'] == 'Haupt'
+                and z['schluessel'] == s and z is not vorhanden]
+        eingabe = self.biotop_query.text()
+
+        def aktion(zl):
+            if not all(self._rolle(zl, z['fid'], 'Neben') for z in alte):
+                return False
+            if vorhanden:
+                return self._rolle(zl, vorhanden['fid'], rolle)
+            f = QgsFeature(zl.fields())
+            werte = {'flaeche_id': str(flaeche), 'schluessel': s, 'code': t['code'], 'name': t['name'],
+                     'rolle': rolle, 'bund_code': t['bund_code'] or None, 'original_eingabe': eingabe,
+                     'erfasst_am': datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}
+            for k, v in werte.items():
+                if k in zl.fields().names():
+                    f.setAttribute(k, v)
+            return zl.addFeature(f)
+        if self.biotop_aendern(aktion):
+            self.biotope_anzeigen()
+            self.message(f"Gespeichert: {t['code']} ({rolle}) → {flaeche}"
+                         + (' · ' + ', '.join(z['code'] for z in alte) + ' jetzt Neben' if alte else ''))
+            self.biotop_query.clear()
+
+    def biotop_toggle(self):
+        r = self.biotop_liste.currentRow()
+        if r < 0:
+            return
+        z = self.biotop_zuordnungen[r]
+        neu = 'Neben' if z['rolle'] == 'Haupt' else 'Haupt'
+        alte = [x for x in self.biotop_zuordnungen if neu == 'Haupt' and x['rolle'] == 'Haupt'
+                and x['schluessel'] == z['schluessel'] and x is not z]
+        if self.biotop_aendern(lambda zl: all(self._rolle(zl, x['fid'], 'Neben') for x in alte)
+                               and self._rolle(zl, z['fid'], neu)):
+            self.biotope_anzeigen()
+            self.message(f"{z['code']} ist jetzt {neu}biotop.")
+
+    def biotop_delete(self):
+        r = self.biotop_liste.currentRow()
+        if r < 0:
+            return
+        z = self.biotop_zuordnungen[r]
+        if QMessageBox.question(self, 'Biotoptyp entfernen', f"{z['code']} – {z['name']} von dieser Fläche entfernen?",
+                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        if self.biotop_aendern(lambda zl: zl.deleteFeature(z['fid'])):
+            self.biotope_anzeigen()
+            self.message(f"Entfernt: {z['code']}")
 
     # ---------------------------------------------------------------- Standortfotos (Tabelle "fotos", Dateien unter fotos/)
     def foto_layer(self):
@@ -945,7 +1247,7 @@ class GoKartDock(QDockWidget):
             self.message('Artenliste fehlgeschlagen: ' + str(e))
 
     def record(self, *_args, ziel='suche'):
-        """Vosk-Spracheingabe; ziel='suche' (Pflanzenname) oder 'kommentar' (Fotokommentar)."""
+        """Vosk-Spracheingabe; ziel='suche' (Pflanzenname), 'kommentar' (Fotokommentar) oder 'biotop'."""
         self.voice_ziel = ziel
         if self.voice and self.voice.isRunning():
             self.message('Aufnahme läuft bereits.')
@@ -959,16 +1261,23 @@ class GoKartDock(QDockWidget):
             model = path
         self.mic.setEnabled(False)
         self.foto_mic.setEnabled(False)
+        self.biotop_mic.setEnabled(False)
         self.message('Mikrofon wird vorbereitet … noch nicht sprechen.')
         self.voice = VoiceThread(model, self)
         self.voice.status.connect(self.message)
         self.voice.ready.connect(lambda: self.message('● JETZT sprechen (max. 8 Sekunden).'))
         self.voice.result.connect(lambda text, z=ziel: self.voice_result(text, z))
         self.voice.failure.connect(lambda err: self.message('Spracherkennung: ' + err))
-        self.voice.finished.connect(lambda: (self.mic.setEnabled(True), self.foto_mic.setEnabled(True)))
+        self.voice.finished.connect(lambda: (self.mic.setEnabled(True), self.foto_mic.setEnabled(True),
+                                             self.biotop_mic.setEnabled(bool(self.biotop_typen))))
         self.voice.start()
 
     def voice_result(self, text, ziel='suche'):
+        if ziel == 'biotop':
+            self.biotop_query.setText(text)
+            self.message(('Erkannt: ' + text + ' – Biotoptyp bestätigen.') if text
+                         else 'Nichts erkannt – nach „JETZT sprechen“ deutlich einsprechen.')
+            return
         if ziel == 'kommentar':
             if text:
                 alt = self.foto_kommentar.text().strip()

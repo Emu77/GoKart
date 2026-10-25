@@ -337,7 +337,7 @@ def schritt(n):
 def _schritt(n):
     p = plugin
     if n == 0:
-        assert len(iface.toolbar) == 2, 'Foto-Knopf fehlt in der Toolbar'
+        assert len(iface.toolbar) >= 2, 'Foto-Knopf fehlt in der Toolbar'
         p.fotoDialogOeffnen()
     elif n == 1:
         p.flaecheWaehlen('K6-001', 'Test')

@@ -15,6 +15,7 @@ Geplante Funktionen:
 - Automatische Vorschläge bei der Artnamensuche
 - Eigene Synonyme für Pflanzenarten
 - Zuordnung von Pflanzenarten zu Kartierungsflächen
+- Biotoptyp je Fläche (Haupt-/Nebenbiotop) nach Bundes- oder Landesschlüssel
 - Integration in QGIS und QField
 - Nutzung auf Android, iOS und Desktop
 
@@ -36,6 +37,14 @@ Geplante Funktionen:
 - Eigene Synonyme werden beim Erfassen gelernt
 - GeoPackage-Datenmodell: Flächen, Artnachweise, eigene Synonyme, Taxa, Suchnamen
 - Build-Skript (PyQGIS) erzeugt GeoPackage + QGIS-Projekt aus der SQLite-Datenbank und GermanSL
+
+### Biotoptypen (Bund / Länder)
+- Kataloge je Schlüssel als CSV: `qgis_plugin/gokart_desktop/biotope_kataloge/` (SH weitgehend, NI Wälder; Rest per Importer)
+- Importer aus Original-PDF/Excel: `qfield/werkzeuge/biotope_katalog_import.py`
+- Ins Projekt: `qfield/werkzeuge/biotope_einspielen.py <Projekt> --schluessel SH` (Tabellen `biotoptypen`, `biotopzuordnung`)
+- Geltender Schlüssel = Projektvariable `gokart_biotop_schluessel` (GoKart Desktop → Einrichten…)
+- QField: dritter Knopf „Biotoptyp“ – Code oder Name tippen/diktieren (auch buchstabiert: „we em ypsilon“ → WMy)
+- GoKart Desktop: Bereich „Biotoptypen dieser Fläche“; `abgleich.py` gleicht Zuordnungen PC ↔ Tablet ab
 
 ### Datenhaltung
 - SQLite-Datenbank

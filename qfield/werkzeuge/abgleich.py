@@ -19,6 +19,10 @@ Regeln:
     Fehlt die Tabelle, wird sie angelegt (und im Tablet-Projekt als Layer eingetragen).
   * Gelöschte Einträge kann das Skript nicht erkennen – sie kämen von der anderen Seite zurück.
     Dafür: --weglassen W-34:68005 (Fläche:taxon_id) bzw. --foto-weglassen fotos/<Datei>.jpg, mehrfach möglich.
+  * Biotoptypen: Zuordnungen (Tabelle biotopzuordnung) sind eindeutig durch Fläche + Schlüssel + Code und werden
+    wie Nachweise vereinigt (rolle, anteil, bemerkung werden ergänzt). Entfernen: --biotop-weglassen W-34:SH:WMy.
+    Den Biotop-Katalog (biotoptypen, biotop_schluessel) und die Projektvariable gokart_biotop_schluessel gibt
+    der PC vor – sie kommen samt Layern ins Tablet-Zip.
   * Das aktuelle QField-Plugin aus qfield_plugin/ kommt automatisch mit ins Tablet-Zip (abschalten: --ohne-plugin).
 
 QGIS und QField vorher schließen bzw. das Projekt nicht geöffnet haben.
@@ -35,6 +39,8 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
+import biotope as B  # noqa: E402
 from artenliste_export import layer_suchen, projekt_finden, projekt_lesen  # noqa: E402
 
 INTERNE_IDS = {'fid', 'fid_1', 'ogc_fid'}   # werden nie übertragen, jede Datei vergibt eigene
@@ -46,7 +52,8 @@ FOTO_SQL = (f'CREATE TABLE "{FOTO_TABELLE}" (fid INTEGER PRIMARY KEY AUTOINCREME
             'lon REAL, lat REAL)')   # taxon_id bleibt frei (Standortfotos), für spätere Artfotos reserviert
 PLUGIN_ORDNER = Path(__file__).resolve().parents[2] / 'qfield_plugin'
 PLUGIN_QML = 'GoKart_Wohnung.qml'
-PLUGIN_DATEIEN = ('gokart_suche.js', 'gokart_icon.svg', 'gokart_foto.svg')
+PLUGIN_DATEIEN = ('gokart_suche.js', 'gokart_biotop.js', 'gokart_icon.svg', 'gokart_foto.svg', 'gokart_biotop.svg')
+BIOTOP_FELDER = ('rolle', 'anteil', 'bemerkung')
 
 
 class Seite:
@@ -60,8 +67,10 @@ class Seite:
         self.fk = var.get('gokart_nachweis_fk') or 'flaeche_id'
         if not self.an:
             raise SystemExit(f'{name}: Layer mit Artnachweisen nicht gefunden ({qgs})')
-        # Fotos liegen in derselben GeoPackage wie die Artnachweise
+        # Fotos und Biotoptypen liegen in derselben GeoPackage wie die Artnachweise
         self.fo = {'datei': self.an['datei'], 'tabelle': FOTO_TABELLE, 'name': FOTO_TABELLE}
+        self.bz = {'datei': self.an['datei'], 'tabelle': B.T_ZUORDNUNG, 'name': B.T_ZUORDNUNG}
+        self.bz_cols, self.bz_pk = [], []
 
     @property
     def home(self):
@@ -112,6 +121,42 @@ class Seite:
                     "VALUES (?, 'attributes', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))", (FOTO_TABELLE, FOTO_TABELLE))
         if con.execute("SELECT 1 FROM sqlite_master WHERE name='gpkg_ogr_contents'").fetchone():
             con.execute('INSERT INTO gpkg_ogr_contents (table_name, feature_count) VALUES (?, 0)', (FOTO_TABELLE,))
+        con.commit()
+        con.close()
+
+    def hat_tabelle(self, tabelle):
+        con = sqlite3.connect(self.an['datei'])
+        da = B.hat_tabelle(con, tabelle)
+        con.close()
+        return da
+
+    def biotope(self):
+        """{(flaeche_id, schluessel, code): Zeile} der Biotop-Zuordnungen."""
+        if not self.hat_tabelle(B.T_ZUORDNUNG):
+            self.bz_cols, self.bz_pk = [], []
+            return {}
+        cols, pk, daten = self._lesen(self.bz)
+        self.bz_cols, self.bz_pk = cols, pk
+        return {(str(d.get('flaeche_id')), str(d.get('schluessel')), str(d.get('code'))): d for d in daten}
+
+    def katalog(self):
+        """{schluessel: anzahl} des eingespielten Biotop-Katalogs."""
+        return {s: n for s, _, n, _ in B.schluessel_liste(self.an['datei'])}
+
+    def katalog_kopieren(self, quelle):
+        """Biotop-Katalog (biotoptypen, biotop_schluessel) von einer anderen Seite übernehmen.
+        Schlüssel, die nur hier vorkommen, bleiben erhalten."""
+        B.tabellen_anlegen(self.an['datei'])
+        con = sqlite3.connect(self.an['datei'])
+        con.execute('ATTACH DATABASE ? AS q', (str(quelle.an['datei']),))
+        for t in (B.T_TYPEN, B.T_SCHLUESSEL):
+            liste = ', '.join(B.SPALTEN[t])
+            con.execute(f'DELETE FROM "{t}" WHERE schluessel IN (SELECT schluessel FROM q."{t}")')
+            con.execute(f'INSERT INTO "{t}" ({liste}) SELECT {liste} FROM q."{t}"')
+        con.commit()
+        con.execute('DETACH DATABASE q')
+        for t in B.SQL:
+            B._registrieren(con, t)
         con.commit()
         con.close()
 
@@ -255,6 +300,8 @@ def main():
                     help='Nachweis auf beiden Seiten entfernen')
     ap.add_argument('--foto-weglassen', action='append', default=[], metavar='DATEINAME',
                     help='Fotoeintrag auf beiden Seiten entfernen (Bilddatei bleibt liegen)')
+    ap.add_argument('--biotop-weglassen', action='append', default=[], metavar='FLÄCHE:SCHLÜSSEL:CODE',
+                    help='Biotop-Zuordnung auf beiden Seiten entfernen')
     ap.add_argument('--ohne-plugin', action='store_true', help='QField-Plugin im Tablet-Zip nicht aktualisieren')
     a = ap.parse_args()
 
@@ -301,11 +348,34 @@ def main():
         syn_nur_pc = [k for k in s_pc if k not in s_tb]
         syn_nur_tb = [k for k in s_tb if k not in s_pc]
 
+        # --- Biotoptypen (Zuordnungen vereinigen, Katalog + Variable vom PC)
+        b_pc, b_tb = pc.biotope(), tb.biotope()
+        bweg = {tuple(w.split(':', 2)) for w in a.biotop_weglassen}
+        bnur_pc = [k for k in b_pc if k not in b_tb and k not in bweg]
+        bnur_tb = [k for k in b_tb if k not in b_pc and k not in bweg]
+        bupd_pc, bupd_tb, bkonflikt = ergaenzungen(b_pc, b_tb, BIOTOP_FELDER)
+        bweg_pc = [k for k in bweg if k in b_pc]
+        bweg_tb = [k for k in bweg if k in b_tb]
+        kat_pc, kat_tb = pc.katalog(), tb.katalog()
+        kat_neu = bool(kat_pc) and any(kat_tb.get(s) != n for s, n in kat_pc.items())
+        biotop_pc = bool(kat_pc) or pc.hat_tabelle(B.T_ZUORDNUNG)
+        btab_pc = tb.hat_tabelle(B.T_ZUORDNUNG) and not pc.hat_tabelle(B.T_ZUORDNUNG)
+        btab_tb = biotop_pc and not tb.hat_tabelle(B.T_ZUORDNUNG)
+        blayer_tb = biotop_pc and not set(B.LAYER_IDS.values()) <= B.qgs_layer_ids(tb.qgs)
+        var_pc, var_tb = B.qgs_variable(pc.qgs, B.VAR_SCHLUESSEL), B.qgs_variable(tb.qgs, B.VAR_SCHLUESSEL)
+        var_neu = bool(var_pc) and var_pc != var_tb
+        # Zwei verschiedene Hauptbiotope für dieselbe Fläche und denselben Schlüssel nach dem Abgleich?
+        haupt = {}
+        for k, d in list(b_pc.items()) + list(b_tb.items()):
+            if k not in bweg and (d.get('rolle') or '') == 'Haupt':
+                haupt.setdefault(k[:2], set()).add(k[2])
+        haupt_doppelt = {k: v for k, v in haupt.items() if len(v) > 1}
+
         plugin_neu = [] if a.ohne_plugin else plugin_pruefen(tb)
 
         # --- Bericht
-        print(f'PC:     {len(n_pc)} Nachweise, {len(f_pc)} Fotos, {len(s_pc)} eigene Synonyme  ({pc.qgs})')
-        print(f'Tablet: {len(n_tb)} Nachweise, {len(f_tb)} Fotos, {len(s_tb)} eigene Synonyme  ({tablet_pfad})')
+        print(f'PC:     {len(n_pc)} Nachweise, {len(f_pc)} Fotos, {len(b_pc)} Biotope, {len(s_pc)} eigene Synonyme  ({pc.qgs})')
+        print(f'Tablet: {len(n_tb)} Nachweise, {len(f_tb)} Fotos, {len(b_tb)} Biotope, {len(s_tb)} eigene Synonyme  ({tablet_pfad})')
         print(f'Gemeinsam: {len(beide)} Nachweise\n')
         for titel, keys, quelle, fk in (('Nur am PC → kommt aufs Tablet', nur_pc, n_pc, pc.fk),
                                         ('Nur auf dem Tablet → kommt auf den PC', nur_tb, n_tb, tb.fk)):
@@ -339,6 +409,29 @@ def main():
         if tabelle_pc or tabelle_tb or layer_tb:
             print(f'Fototabelle wird angelegt: PC {"ja" if tabelle_pc else "-"}, Tablet {"ja" if tabelle_tb else "-"}'
                   f'{", Layer im Tablet-Projekt eintragen" if layer_tb else ""}')
+        if bnur_pc or bnur_tb:
+            print(f'Biotoptypen: {len(bnur_pc)} nur PC, {len(bnur_tb)} nur Tablet → werden ergänzt')
+            for titel, keys, quelle in (('PC → Tablet', bnur_pc, b_pc), ('Tablet → PC', bnur_tb, b_tb)):
+                for k in sorted(keys):
+                    d = quelle[k]
+                    print(f'  + {titel}: {k[0]} · {k[1]} {k[2]} {d.get("name") or ""} ({d.get("rolle") or "-"})'
+                          f'   [--biotop-weglassen {k[0]}:{k[1]}:{k[2]}]')
+        for titel, upd in (('PC → Tablet', bupd_tb), ('Tablet → PC', bupd_pc)):
+            for k, feld, wert in upd:
+                print(f'  ~ Biotop {feld} {titel}: {":".join(k)}: {wert}')
+        for k, feld, w_pc, w_tb in bkonflikt:
+            print(f'⚠ Biotop {feld} unterschiedlich, bleibt wie es ist: {":".join(k)}\n     PC: {w_pc!r}  Tablet: {w_tb!r}')
+        for (fl, sch), codes in sorted(haupt_doppelt.items()):
+            print(f'⚠ Fläche {fl}: mehrere Hauptbiotope ({sch}: {", ".join(sorted(codes))}) – eins auf Neben setzen')
+        if bweg_pc or bweg_tb:
+            print(f'Biotop-Zuordnungen werden entfernt: {len(bweg_pc)} PC / {len(bweg_tb)} Tablet')
+        if kat_neu or btab_tb or blayer_tb:
+            print('Biotop-Katalog fürs Tablet: ' + ', '.join(f'{s} ({n})' for s, n in sorted(kat_pc.items()))
+                  + (' + Layer im Tablet-Projekt' if blayer_tb else ''))
+        if btab_pc:
+            print('Biotop-Tabellen werden am PC angelegt')
+        if var_neu:
+            print(f'Biotoptypen-Schlüssel fürs Tablet: {var_tb or "-"} → {var_pc}')
         if plugin_neu:
             print(f'QField-Plugin wird aktualisiert: {", ".join(plugin_neu)}')
         if reg_pc or reg_tb:
@@ -348,7 +441,8 @@ def main():
         nichts = not (nur_pc or nur_tb or upd_pc or upd_tb or weg_pc or weg_tb or fnur_pc or fnur_tb
                       or fupd_pc or fupd_tb or fweg_pc or fweg_tb or datei_zum_pc or datei_zum_tb
                       or syn_nur_pc or syn_nur_tb or tabelle_pc or tabelle_tb or layer_tb or plugin_neu
-                      or reg_pc or reg_tb)
+                      or reg_pc or reg_tb or bnur_pc or bnur_tb or bupd_pc or bupd_tb or bweg_pc or bweg_tb
+                      or kat_neu or btab_pc or btab_tb or blayer_tb or var_neu)
         if nichts:
             print('\n✓ Beide Stände sind gleich.')
             return
@@ -368,6 +462,14 @@ def main():
                 d[seite.fk] = d.pop(quelle_fk, None)
             return d
 
+        def biotope_anwenden(seite, neu, upd, weg, tabelle):
+            if tabelle:
+                B.tabellen_anlegen(seite.an['datei'])
+            seite.biotope()                                        # Spaltenliste (neu) lesen
+            if neu or weg:
+                seite.schreiben(seite.bz, seite.bz_cols, seite.bz_pk, neu, weg, ('flaeche_id', 'schluessel', 'code'))
+            seite.aktualisieren(seite.bz, upd, ('flaeche_id', 'schluessel', 'code'))
+
         def anwenden(seite, n_neu, n_upd, n_weg, f_neu, f_upd, f_weg, syn_neu, dateien, quelle_home, tabelle):
             seite.registrieren(seite.unregistriert())
             if tabelle:
@@ -384,15 +486,25 @@ def main():
                 shutil.copy2(quelle_home / f, seite.home / f)
 
         print('\nPC-Projekt aktualisieren …')
-        sichern(pc_dateien)
+        sichern(pc_dateien + ([pc.qgs] if btab_pc else []))
         anwenden(pc, [fuer(pc, n_tb[k]) for k in nur_tb], upd_pc, weg_pc,
                  [f_tb[k] for k in fnur_tb], fupd_pc, fweg_pc, [s_tb[k] for k in syn_nur_tb],
                  datei_zum_pc, tb.home, tabelle_pc)
+        biotope_anwenden(pc, [b_tb[k] for k in bnur_tb], bupd_pc, bweg_pc, btab_pc)
+        if btab_pc:
+            B.qgs_layer_eintragen(pc.qgs, pc.an['datei'])
 
         print('Tablet-Zip erstellen …')
         anwenden(tb, [fuer(tb, n_pc[k]) for k in nur_pc], upd_tb, weg_tb,
                  [f_pc[k] for k in fnur_pc], fupd_tb, fweg_tb, [s_pc[k] for k in syn_nur_pc],
                  datei_zum_tb, pc.home, tabelle_tb)
+        if kat_neu or btab_tb:
+            tb.katalog_kopieren(pc)
+        biotope_anwenden(tb, [b_pc[k] for k in bnur_pc], bupd_tb, bweg_tb, btab_tb)
+        if blayer_tb:
+            B.qgs_layer_eintragen(tb.qgs, tb.an['datei'])
+        if var_neu:
+            B.qgs_variable_setzen(tb.qgs, B.VAR_SCHLUESSEL, var_pc)
         (tb.home / FOTO_ORDNER).mkdir(exist_ok=True)
         if layer_tb:
             tb.fotolayer_eintragen()
@@ -408,8 +520,8 @@ def main():
                 if p.is_file() and not p.name.endswith(('-wal', '-shm', '.bak', '~')):
                     z.write(p, p.relative_to(basis))
             z.writestr(FOTO_ORDNER + '/', '')          # leeren Fotoordner mitnehmen
-        print(f'\n✓ Fertig. PC: {len(pc.nachweise())} Nachweise / {len(pc.fotos())} Fotos, '
-              f'Tablet: {len(tb.nachweise())} Nachweise / {len(tb.fotos())} Fotos')
+        print(f'\n✓ Fertig. PC: {len(pc.nachweise())} Nachweise / {len(pc.fotos())} Fotos / {len(pc.biotope())} Biotope, '
+              f'Tablet: {len(tb.nachweise())} Nachweise / {len(tb.fotos())} Fotos / {len(tb.biotope())} Biotope')
         print(f'→ Fürs Tablet: {ziel}')
 
 

@@ -7,7 +7,8 @@ Aufruf (Ubuntu mit installiertem QGIS):
         --ziel /media/emu/daten/gpb/GoKart/qfield_projekt
 
 Ergebnis im Zielordner:
-    gokart.gpkg   Flächen, Taxa, Suchnamen, eigene Synonyme, Artnachweise
+    gokart.gpkg   Flächen, Taxa, Suchnamen, eigene Synonyme, Artnachweise,
+                  Biotoptypen-Kataloge (biotoptypen, biotop_schluessel) und Biotop-Zuordnungen
     gokart.qgs    QGIS-/QField-Projekt (Relation Fläche -> Artnachweise, Auswahllisten)
     gokart.qml    Projekt-Plugin (wird separat aus plugin/ kopiert, gleicher Name wie .qgs!)
 
@@ -23,6 +24,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gokart_namen import normalisieren, varianten  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
+import biotope as B  # noqa: E402
 
 from qgis.core import (  # noqa: E402
     QgsApplication, QgsCoordinateReferenceSystem, QgsDefaultValue, QgsEditFormConfig,
@@ -456,6 +459,9 @@ def main():
     ap.add_argument('--id-auto', metavar='PRÄFIX',
                     help='Flächen fortlaufend nummerieren statt --id-feld, z. B. --id-auto K6- ergibt K6-001, K6-002 …')
     ap.add_argument('--name-feld', help='optionales Feld für eine Flächenbezeichnung')
+    ap.add_argument('--biotop-schluessel', metavar='SCHLÜSSEL',
+                    help='geltender Biotoptypen-Schlüssel, z. B. SH, NI, BUND (Projektvariable gokart_biotop_schluessel)')
+    ap.add_argument('--ohne-biotope', action='store_true', help='keine Biotoptypen-Kataloge einspielen')
     ap.add_argument('--neu', action='store_true', help='vorhandenes gokart.gpkg überschreiben (Erfassungen gehen verloren!)')
     a = ap.parse_args()
     if not a.db.is_file():
@@ -491,6 +497,14 @@ def main():
         gc.collect()
         QgsProject.instance().clear()
         app.exitQgis()
+
+    # Biotoptypen-Kataloge (reines SQLite/XML, nach dem Schließen von QGIS)
+    if not a.ohne_biotope:
+        for s, (n, voll, _) in sorted(B.kataloge_einspielen(gpkg).items()):
+            print(f'Biotoptypen {s}: {n}{"" if voll else " (unvollständig)"}')
+        B.qgs_layer_eintragen(a.ziel / 'gokart.qgs', gpkg)
+        if a.biotop_schluessel:
+            B.qgs_variable_setzen(a.ziel / 'gokart.qgs', B.VAR_SCHLUESSEL, a.biotop_schluessel.upper())
 
     # Plugin neben das Projekt legen (Name muss dem .qgs entsprechen)
     if a.plugin.is_dir():

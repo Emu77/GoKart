@@ -5,12 +5,16 @@
 //   gokart_nachweis_layer (Layer-ID), gokart_nachweis_fk
 // Version 0.3: Standortfotos über einen zweiten Knopf (Kamera) – Bilddateien unter fotos/, Einträge in der
 //   Tabelle "fotos" (flaeche_id, datei, kommentar, aufgenommen_am, lon, lat). Tabelle/Layer legt abgleich.py an.
+// Version 0.4: Biotoptypen über einen dritten Knopf – Schlüssel (Bund/Land) aus der Projektvariablen
+//   gokart_biotop_schluessel, Katalog im Layer "biotoptypen", Erfassung im Layer "biotopzuordnung"
+//   (flaeche_id, schluessel, code, name, rolle Haupt/Neben, …). Tabellen/Layer legt biotope_einspielen.py an.
 // Getestet gegen die API von QField 4.x; QField 3.x wird über einen Fallback unterstützt.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Controls.Material
 import "gokart_suche.js" as Suche
+import "gokart_biotop.js" as Biotop
 
 Item {
     id: plugin
@@ -35,6 +39,12 @@ Item {
     property var fotoFuer: null          // { flaeche, lon, lat } des nächsten Fotos
     property var fotosDerFlaeche: []     // [{ fid, datei, kommentar, am, lon, lat }]
     readonly property int fotoMaxPixel: 1600   // längste Bildseite, hält Zips klein
+    property var biotopIndex: null       // Suchindex des geltenden Schlüssels
+    property string biotopSchluessel: '' // z. B. SH, NI, BUND
+    property var biotopSchluesselListe: []   // [{ schluessel, name, anzahl, vollstaendig }]
+    property var biotopTreffer: []
+    property int biotopAuswahl: -1
+    property var biotopeDerFlaeche: []   // [{ fid, schluessel, code, name, rolle }]
 
     readonly property color gruen: '#167d50'
     readonly property color gruenHell: '#e6f6eb'
@@ -46,6 +56,7 @@ Item {
         }
         iface.addItemToPluginsToolbar(gokartKnopf);
         iface.addItemToPluginsToolbar(fotoKnopf);
+        iface.addItemToPluginsToolbar(biotopKnopf);
     }
 
     // ---------------------------------------------------------------- Hilfsfunktionen
@@ -112,6 +123,7 @@ Item {
             label: v.gokart_flaechen_label || '',
             nachweise: layerAusRef(v.gokart_nachweis_layer) || ebene('artnachweise'),
             fk: v.gokart_nachweis_fk || 'flaeche_id',
+            biotopSchluessel: String(v.gokart_biotop_schluessel || '').toUpperCase(),
             quelle: v.gokart_flaechen_layer ? 'Projektvariablen' : 'Layernamen (Fallback)'
         };
         if (c.flaechen && !c.label) {
@@ -313,6 +325,7 @@ Item {
         aktiveFlaeche = String(id);
         artenLaden();
         fotosLaden();
+        biotopeLaden();
         meldung('Aktive Fläche: ' + flaechenName(aktiveFlaeche) + ' (' + quelle + ')');
     }
 
@@ -492,6 +505,171 @@ Item {
         fotosLaden();
     }
 
+    // ---------------------------------------------------------------- Biotoptypen
+    function biotopLayer() { return ebene('biotoptypen'); }
+    function zuordnungLayer() { return ebene('biotopzuordnung'); }
+
+    function biotopSchluesselLaden() {
+        var l = ebene('biotop_schluessel'), liste = [];
+        if (l) alleFeatures(l, null, function (f) {
+            liste.push({ schluessel: String(attr(f, 'schluessel') || ''), name: attr(f, 'name') || '',
+                         anzahl: Number(attr(f, 'anzahl') || 0), vollstaendig: Number(attr(f, 'vollstaendig') || 0) === 1 });
+        });
+        liste.sort(function (a, b) { return a.schluessel.localeCompare(b.schluessel); });
+        biotopSchluesselListe = liste;
+        // Projektvariable gilt; ohne Variable: einziger vorhandener Schlüssel
+        var s = cfg.biotopSchluessel || biotopSchluessel || (liste.length === 1 ? liste[0].schluessel : '');
+        if (s !== biotopSchluessel || !biotopIndex) biotopSchluesselWaehlen(s);
+    }
+
+    function biotopSchluesselWaehlen(s) {
+        biotopSchluessel = String(s || '');
+        biotopIndex = null;
+        biotopTreffer = [];
+        biotopAuswahl = -1;
+        var l = biotopLayer();
+        if (!l || !biotopSchluessel) return;
+        var idx = Biotop.neuerIndex();
+        alleFeatures(l, '"schluessel" = ' + textSql(biotopSchluessel), function (f) {
+            Biotop.typHinzufuegen(idx, {
+                code: String(attr(f, 'code') || ''), name: String(attr(f, 'name') || ''),
+                nr: attr(f, 'nr') || '', ebene: Number(attr(f, 'ebene') || 0), obercode: attr(f, 'obercode') || '',
+                bund_code: attr(f, 'bund_code') || '', ffh_lrt: attr(f, 'ffh_lrt') || ''
+            });
+        });
+        Biotop.abschliessen(idx);
+        biotopIndex = idx;
+        if (biotopSucheFeld.text) biotopSuchen(biotopSucheFeld.text);
+    }
+
+    function biotopSchluesselInfo() {
+        for (var i = 0; i < biotopSchluesselListe.length; i++)
+            if (biotopSchluesselListe[i].schluessel === biotopSchluessel) return biotopSchluesselListe[i];
+        return null;
+    }
+
+    function biotopSuchen(text) {
+        var t = Biotop.suchen(biotopIndex, text, 6);
+        biotopTreffer = t;
+        var exakte = t.filter(function (r) { return r.exakt; });
+        biotopAuswahl = (exakte.length === 1) ? t.indexOf(exakte[0]) : -1;
+    }
+
+    function biotopGewaehlt() {
+        return (biotopAuswahl >= 0 && biotopAuswahl < biotopTreffer.length) ? biotopTreffer[biotopAuswahl].typ : null;
+    }
+
+    function biotopeLaden() {
+        var zl = zuordnungLayer(), liste = [];
+        if (zl && aktiveFlaeche) {
+            alleFeatures(zl, '"flaeche_id" = ' + textSql(aktiveFlaeche), function (f) {
+                liste.push({ fid: f.id, schluessel: attr(f, 'schluessel') || '', code: attr(f, 'code') || '',
+                             name: attr(f, 'name') || '', rolle: attr(f, 'rolle') || 'Neben' });
+            });
+            liste.sort(function (a, b) {
+                if (a.rolle !== b.rolle) return a.rolle === 'Haupt' ? -1 : 1;
+                return String(a.code).localeCompare(String(b.code));
+            });
+        }
+        biotopeDerFlaeche = liste;
+    }
+
+    function rolleSetzen(zl, fid, rolle) {
+        var i = zl.fields.indexFromName('rolle');
+        return i >= 0 && zl.changeAttributeValue(fid, i, rolle);
+    }
+
+    // rolle: 'Haupt' oder 'Neben'. Ein neues Hauptbiotop stuft ein bisheriges (gleicher Schlüssel) zu Neben herab.
+    function biotopSpeichern(rolle) {
+        var typ = biotopGewaehlt();
+        var zl = zuordnungLayer();
+        if (!zl) { meldung('Biotop-Tabellen fehlen – am PC biotope_einspielen.py bzw. abgleich.py laufen lassen.'); return; }
+        if (!typ) { meldung('Bitte zuerst einen Biotoptyp auswählen.'); return; }
+        if (!aktiveFlaeche) { meldung('Bitte zuerst eine Fläche wählen.'); return; }
+        offeneAenderungenSpeichern(zl);
+        var vorhanden = null, alteHaupt = [];
+        for (var i = 0; i < biotopeDerFlaeche.length; i++) {
+            var b = biotopeDerFlaeche[i];
+            if (b.schluessel !== biotopSchluessel) continue;
+            if (b.code === typ.code) vorhanden = b;
+            else if (rolle === 'Haupt' && b.rolle === 'Haupt') alteHaupt.push(b);
+        }
+        if (vorhanden && vorhanden.rolle === rolle) {
+            meldung(typ.code + ' ist auf ' + flaechenName(aktiveFlaeche) + ' bereits als ' + rolle + 'biotop erfasst.');
+            return;
+        }
+        var eingabe = biotopSucheFeld.text;
+        var ok = inBearbeitung(zl, function () {
+            for (var k = 0; k < alteHaupt.length; k++) if (!rolleSetzen(zl, alteHaupt[k].fid, 'Neben')) return false;
+            if (vorhanden) return rolleSetzen(zl, vorhanden.fid, rolle);
+            var f = fu.createFeature(zl);
+            setze(f, zl, 'flaeche_id', aktiveFlaeche);
+            setze(f, zl, 'schluessel', biotopSchluessel);
+            setze(f, zl, 'code', typ.code);
+            setze(f, zl, 'name', typ.name);
+            setze(f, zl, 'rolle', rolle);
+            if (typ.bund_code) setze(f, zl, 'bund_code', typ.bund_code);
+            setze(f, zl, 'original_eingabe', eingabe);
+            setze(f, zl, 'erfasst_am', jetzt());
+            return lu.addFeature(zl, f);
+        });
+        if (!ok) { meldung('Speichern fehlgeschlagen – Details unten im Dialog.'); biotopeLaden(); return; }
+        meldung('✔ ' + typ.code + ' (' + rolle + ') → ' + flaechenName(aktiveFlaeche) +
+                (alteHaupt.length ? ' · ' + alteHaupt.map(function (b) { return b.code; }).join(', ') + ' jetzt Neben' : ''));
+        biotopeLaden();
+        biotopSucheFeld.text = '';
+        biotopTreffer = [];
+        biotopAuswahl = -1;
+    }
+
+    function biotopRolleWechseln(b) {
+        if (b.rolle === 'Haupt') {
+            var zl = zuordnungLayer();
+            var ok = inBearbeitung(zl, function () { return rolleSetzen(zl, b.fid, 'Neben'); });
+            meldung(ok ? b.code + ' ist jetzt Nebenbiotop.' : 'Ändern fehlgeschlagen.');
+            biotopeLaden();
+            return;
+        }
+        // Zum Hauptbiotop machen (bisheriges Hauptbiotop desselben Schlüssels → Neben)
+        var zl2 = zuordnungLayer();
+        var ok2 = inBearbeitung(zl2, function () {
+            for (var i = 0; i < biotopeDerFlaeche.length; i++) {
+                var x = biotopeDerFlaeche[i];
+                if (x.fid !== b.fid && x.rolle === 'Haupt' && x.schluessel === b.schluessel && !rolleSetzen(zl2, x.fid, 'Neben'))
+                    return false;
+            }
+            return rolleSetzen(zl2, b.fid, 'Haupt');
+        });
+        meldung(ok2 ? b.code + ' ist jetzt Hauptbiotop.' : 'Ändern fehlgeschlagen.');
+        biotopeLaden();
+    }
+
+    function biotopEntfernen(b) {
+        var zl = zuordnungLayer();
+        if (!zl) return;
+        var ok = inBearbeitung(zl, function () { return lu.deleteFeature(qgisProject, zl, b.fid, false); });
+        meldung(ok ? b.code + ' entfernt.' : 'Entfernen fehlgeschlagen.');
+        biotopeLaden();
+    }
+
+    function biotopDialogOeffnen() {
+        biotopDialog.open();
+        konfigLaden();
+        offeneAenderungenSpeichern(zuordnungLayer());
+        flaechenLaden();
+        biotopSchluesselLaden();
+        biotopeLaden();
+        if (!zuordnungLayer() || !biotopLayer())
+            meldung('Biotop-Tabellen fehlen – am PC biotope_einspielen.py bzw. abgleich.py laufen lassen.');
+        biotopSucheFeld.forceActiveFocus();
+    }
+
+    Timer {
+        id: biotopSuchTimer
+        interval: 250
+        onTriggered: plugin.biotopSuchen(biotopSucheFeld.text)
+    }
+
     Connections {
         target: plugin.fotoQuelle
         ignoreUnknownSignals: true
@@ -564,6 +742,18 @@ Item {
         icon.height: 24
         background: Rectangle { radius: width / 2; color: plugin.gruen }
         onClicked: plugin.fotoDialogOeffnen()
+    }
+
+    RoundButton {
+        id: biotopKnopf
+        width: 48
+        height: 48
+        icon.source: Qt.resolvedUrl('gokart_biotop.svg')
+        icon.color: 'white'
+        icon.width: 24
+        icon.height: 24
+        background: Rectangle { radius: width / 2; color: plugin.gruen }
+        onClicked: plugin.biotopDialogOeffnen()
     }
 
     // ---------------------------------------------------------------- Erfassungsdialog
@@ -881,6 +1071,197 @@ Item {
                             onClicked: { if (sicher) plugin.fotoEntfernen(fotoKarte.modelData); else { sicher = true; entfernZurueck.start(); } }
                             Timer { id: entfernZurueck; interval: 3000; onTriggered: entfernKnopf.sicher = false }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------- Biotoptypen
+    Popup {
+        id: biotopDialog
+        parent: iface.mainWindow().contentItem
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.min(parent.width - 16, 640)
+        height: parent.height - 32
+        x: (parent.width - width) / 2
+        y: 16
+        padding: 12
+        background: Rectangle { color: 'white'; radius: 12 }
+        Material.theme: Material.Light
+        Material.accent: plugin.gruen
+        Material.primary: plugin.gruen
+        Material.foreground: '#1c2934'
+        Material.background: 'white'
+        palette.text: '#1c2934'
+        palette.windowText: '#1c2934'
+        palette.buttonText: '#1c2934'
+        palette.base: 'white'
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: 'GoKart · Biotoptyp'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true }
+                Button { text: 'Schließen'; flat: true; onClicked: biotopDialog.close() }
+            }
+
+            Label { text: 'Fläche'; font.bold: true }
+            RowLayout {
+                Layout.fillWidth: true
+                ComboBox {
+                    Layout.fillWidth: true
+                    model: plugin.flaechen.map(function (f) { return f.name ? f.name + ' (' + f.id + ')' : f.id; })
+                    currentIndex: {
+                        for (var i = 0; i < plugin.flaechen.length; i++) if (plugin.flaechen[i].id === plugin.aktiveFlaeche) return i;
+                        return -1;
+                    }
+                    displayText: currentIndex < 0 ? 'Fläche wählen …' : currentText
+                    onActivated: function (i) { plugin.flaecheWaehlen(plugin.flaechen[i].id, 'aus Liste'); }
+                }
+                Button { text: 'GPS'; onClicked: plugin.flaecheAusGps() }
+                Button { text: 'Karte'; onClicked: plugin.flaecheAusKartenmitte() }
+            }
+
+            // --- Schlüssel: kommt aus der Projektvariablen; ohne Variable hier wählbar (gilt nur bis zum Schließen)
+            RowLayout {
+                Layout.fillWidth: true
+                Label { text: 'Schlüssel'; font.bold: true }
+                Label {
+                    Layout.fillWidth: true
+                    visible: plugin.cfg.biotopSchluessel !== '' && plugin.cfg.biotopSchluessel !== undefined
+                    text: {
+                        var s = plugin.biotopSchluesselInfo();
+                        return plugin.biotopSchluessel + (s ? ' – ' + s.name + (s.vollstaendig ? '' : ' (Katalog unvollständig)') : ' (Katalog fehlt im Projekt)');
+                    }
+                    elide: Text.ElideRight; color: '#53645a'
+                }
+                ComboBox {
+                    Layout.fillWidth: true
+                    visible: !(plugin.cfg.biotopSchluessel !== '' && plugin.cfg.biotopSchluessel !== undefined)
+                    model: plugin.biotopSchluesselListe.map(function (s) { return s.schluessel + ' – ' + s.name; })
+                    currentIndex: {
+                        for (var i = 0; i < plugin.biotopSchluesselListe.length; i++)
+                            if (plugin.biotopSchluesselListe[i].schluessel === plugin.biotopSchluessel) return i;
+                        return -1;
+                    }
+                    displayText: currentIndex < 0 ? 'Schlüssel wählen …' : currentText
+                    onActivated: function (i) { plugin.biotopSchluesselWaehlen(plugin.biotopSchluesselListe[i].schluessel); }
+                }
+            }
+
+            TextField {
+                id: biotopSucheFeld
+                objectName: 'gokartBiotopSucheFeld'
+                Layout.fillWidth: true
+                font.pixelSize: 20
+                enabled: plugin.biotopIndex !== null
+                placeholderText: plugin.biotopIndex ? 'Code oder Name – tippen oder Tastatur-Mikro' : 'Erst Schlüssel wählen'
+                inputMethodHints: Qt.ImhNoAutoUppercase
+                onTextChanged: biotopSuchTimer.restart()
+                onAccepted: { biotopSuchTimer.stop(); plugin.biotopSuchen(text); if (plugin.biotopGewaehlt()) plugin.biotopSpeichern(plugin.biotopeDerFlaeche.some(function (b) { return b.rolle === 'Haupt' && b.schluessel === plugin.biotopSchluessel; }) ? 'Neben' : 'Haupt'); }
+            }
+
+            Label {
+                visible: biotopSucheFeld.text.length > 0 && plugin.biotopTreffer.length === 0
+                text: 'Kein passender Biotoptyp gefunden.'
+                color: '#a33'
+            }
+
+            Repeater {
+                model: plugin.biotopTreffer
+                delegate: Rectangle {
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    implicitHeight: bzeile.implicitHeight + 14
+                    radius: 8
+                    color: index === plugin.biotopAuswahl ? plugin.gruenHell : '#f6f8f6'
+                    border.width: index === plugin.biotopAuswahl ? 2 : 1
+                    border.color: index === plugin.biotopAuswahl ? plugin.gruen : '#d8e4da'
+                    ColumnLayout {
+                        id: bzeile
+                        anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        anchors.margins: 10
+                        spacing: 2
+                        Label {
+                            Layout.fillWidth: true
+                            text: modelData.typ.code + ' – ' + modelData.typ.name
+                            font.bold: true; font.pixelSize: 16; wrapMode: Text.Wrap; color: '#1c2934'
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: text !== ''
+                            text: [modelData.typ.nr ? 'Nr. ' + modelData.typ.nr : '',
+                                   modelData.typ.unterTypen ? 'Obergruppe (' + modelData.typ.unterTypen + ' Typen)' : '',
+                                   modelData.typ.ffh_lrt ? 'FFH ' + modelData.typ.ffh_lrt : '',
+                                   modelData.typ.bund_code ? 'Bund ' + modelData.typ.bund_code : ''].filter(function (x) { return x; }).join(' · ')
+                            color: '#53645a'; font.pixelSize: 13; elide: Text.ElideRight
+                        }
+                    }
+                    MouseArea { anchors.fill: parent; onClicked: plugin.biotopAuswahl = index }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Button {
+                    Layout.fillWidth: true
+                    text: 'Hauptbiotop'
+                    highlighted: true
+                    enabled: plugin.biotopGewaehlt() !== null && plugin.aktiveFlaeche !== ''
+                    onClicked: plugin.biotopSpeichern('Haupt')
+                }
+                Button {
+                    Layout.fillWidth: true
+                    text: 'Nebenbiotop'
+                    enabled: plugin.biotopGewaehlt() !== null && plugin.aktiveFlaeche !== ''
+                    onClicked: plugin.biotopSpeichern('Neben')
+                }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: plugin.diagnoseFehler
+                text: 'Diagnose: ' + plugin.diagnose
+                wrapMode: Text.Wrap; font.pixelSize: 11; color: '#a33'
+            }
+
+            Label {
+                text: plugin.aktiveFlaeche ? 'Biotoptypen von ' + plugin.flaechenName(plugin.aktiveFlaeche) + ': ' + plugin.biotopeDerFlaeche.length : 'Keine Fläche gewählt'
+                font.bold: true
+                Layout.topMargin: 6
+            }
+            ListView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                model: plugin.biotopeDerFlaeche
+                delegate: RowLayout {
+                    required property var modelData
+                    width: ListView.view.width
+                    Label {
+                        text: (modelData.rolle === 'Haupt' ? '● ' : '○ ') + modelData.code + ' – ' + modelData.name +
+                              (modelData.schluessel !== plugin.biotopSchluessel ? '  [' + modelData.schluessel + ']' : '')
+                        Layout.fillWidth: true; elide: Text.ElideRight; color: '#1c2934'
+                        font.bold: modelData.rolle === 'Haupt'
+                    }
+                    Button {
+                        text: modelData.rolle === 'Haupt' ? '→ Neben' : '→ Haupt'
+                        flat: true
+                        onClicked: plugin.biotopRolleWechseln(modelData)
+                    }
+                    Button {
+                        id: bLoesch
+                        property bool sicher: false
+                        text: sicher ? 'Sicher?' : 'Löschen'
+                        flat: true
+                        onClicked: { if (sicher) plugin.biotopEntfernen(modelData); else { sicher = true; bZurueck.start(); } }
+                        Timer { id: bZurueck; interval: 3000; onTriggered: bLoesch.sicher = false }
                     }
                 }
             }

@@ -13,6 +13,9 @@ Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen od
 | `werkzeuge/zusatznamen.csv` | Eigene gebräuchliche Namen, z. B. Rot-Klee → *Trifolium pratense* |
 | `test/test_suche.js` | Suchtest mit Echtdaten (32 Fälle, alle bestanden) |
 | `test/qml_harness.py` | Simuliert QField und spielt den kompletten Ablauf mit dem Plugin durch |
+| `werkzeuge/biotope_einspielen.py` | Biotoptypen-Kataloge (Bund/Länder) in ein Projekt einspielen, Schlüssel setzen |
+| `werkzeuge/biotope_katalog_import.py` | Katalog-CSV aus Original-PDF/Excel erzeugen oder ergänzen |
+| `test/test_biotop.js`, `test/qml_harness_biotope.py` | Biotop-Suche (Node) und Biotop-Dialog (QField-Simulation) |
 
 ## Datenmodell (`gokart.gpkg`, EPSG:25833)
 
@@ -21,6 +24,9 @@ Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen od
 - `eigene_synonyme`: `taxon_id`, `synonym`, `schluessel` (entsteht beim Erfassen)
 - `taxon` (6.101) und `suchnamen` (15.649): Referenz, schreibgeschützt
 - Relation: Fläche 1:n Artnachweise → im Flächenformular gibt es den Reiter „Arten“
+- `biotop_schluessel`, `biotoptypen`: Biotoptypen-Kataloge (Referenz, schreibgeschützt), Quelle: `qgis_plugin/gokart_desktop/biotope_kataloge/`
+- `biotopzuordnung`: `flaeche_id`, `schluessel`, `code`, `name`, `rolle` (Haupt/Neben), `anteil`, `bund_code`, `original_eingabe`, `erfasst_am`, `bemerkung`
+- Projektvariable `gokart_biotop_schluessel` (z. B. `SH`): welcher Schlüssel im Projekt gilt
 
 ## Auf dem Gerät nutzen (SHIFTphone / Tablet)
 
@@ -67,12 +73,25 @@ Doppelte IDs bekommen ein Suffix (`-2`, `-3`), Flächen ohne ID heißen `OHNE-ID
 
 Alternativ in QGIS den Layer `flaechen` direkt bearbeiten. Jede Fläche braucht eine eindeutige `flaeche_id`.
 
+## Biotoptypen
+
+```bash
+python3 werkzeuge/biotope_einspielen.py <Projektordner oder .qgs> --liste           # was ist da?
+python3 werkzeuge/biotope_einspielen.py <Projektordner oder .qgs> --schluessel SH   # einspielen + Schlüssel setzen
+python3 werkzeuge/abgleich.py <PC-Projekt> <Tablet-Zip> --ausfuehren                 # Katalog + Zuordnungen aufs Tablet
+```
+In QField: Knopf „Biotoptyp“ → Fläche wählen → Code oder Name tippen bzw. diktieren → **Hauptbiotop** oder **Nebenbiotop**.
+Ein neues Hauptbiotop macht das bisherige (gleicher Schlüssel) zum Nebenbiotop. Enter speichert den eindeutigen Treffer
+(als Haupt, wenn noch keins da ist, sonst als Neben). Kataloge ergänzen: siehe `qgis_plugin/gokart_desktop/biotope_kataloge/README.md`.
+
 ## Tests
 
 ```bash
 python3 test/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json
 node test/test_suche.js testdaten.json
 QT_QPA_PLATFORM=offscreen python3 test/qml_harness.py qfield_projekt_kopie
+node test/test_biotop.js
+QT_QPA_PLATFORM=offscreen python3 test/qml_harness_biotope.py projekt_kopie   # gokart.qml = qfield_plugin/GoKart_Wohnung.qml
 ```
 `qml_harness.py` schreibt in das GeoPackage, deshalb nur mit einer **Kopie** ausführen. Benötigt: `pip install PySide6-Essentials`.
 

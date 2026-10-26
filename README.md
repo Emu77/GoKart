@@ -92,3 +92,27 @@ Die Offline-Spracherkennung läuft vorerst über das Diktat der Tastatur.
 ## GitHub
 
 https://github.com/Emu77/GoKart
+
+## Hinweis: GeoPackage auf NTFS-Partitionen (Linux / Dual-Boot)
+
+Liegt das Projekt (`*.gpkg`) unter Linux auf einer NTFS-Partition
+(Treiber `ntfs3` oder `ntfs-3g`), können Änderungen aus QGIS verloren gehen.
+QGIS öffnet GeoPackages standardmäßig im SQLite-WAL-Modus (`-wal`/`-shm`-Dateien),
+der auf NTFS unter Linux nicht zuverlässig funktioniert.
+
+**Symptom:** Erfasste Arten oder Biotoptypen sind nach dem Schließen von QGIS
+nicht mehr in der GeoPackage vorhanden.
+
+**Dateisystem prüfen:**
+
+```bash
+findmnt -no FSTYPE /pfad/zum/projekt
+```
+
+**Abhilfe (eine der beiden):**
+
+1. Projekt auf eine Linux-Partition (ext4) legen, NTFS nur für Sicherungen nutzen.
+2. WAL in QGIS abschalten: *Einstellungen → Optionen → Erweitert* →
+   `walForSqlite3` = `false`, QGIS neu starten.
+
+QField auf Android/iOS ist davon nicht betroffen.

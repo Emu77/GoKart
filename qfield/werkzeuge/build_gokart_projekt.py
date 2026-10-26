@@ -6,6 +6,9 @@ Aufruf (Ubuntu mit installiertem QGIS):
         --db /media/emu/daten/gpb/GoKart/pflanzen/GoKart_Pflanzen_Datenbank/GoKart_Pflanzen.sqlite \
         --ziel /media/emu/daten/gpb/GoKart/qfield_projekt
 
+Vorlage zur Weitergabe (ohne Flächen, Kartierer bringen eigene Shapes mit):
+    python3 build_gokart_projekt.py --db … --ziel … --leer --crs EPSG:25832
+
 Ergebnis im Zielordner:
     gokart.gpkg   Flächen, Taxa, Suchnamen, eigene Synonyme, Artnachweise,
                   Biotoptypen-Kataloge (biotoptypen, biotop_schluessel) und Biotop-Zuordnungen
@@ -189,7 +192,7 @@ def flaechen_importieren(fl, src, id_feld=None, name_feld=None, id_auto=None):
           + (f', {leer} ohne ID (OHNE-ID-…)' if leer else ''))
 
 
-def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None, zusatztaxa=None):
+def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None, zusatztaxa=None, leer=False):
     global CRS
     gsl = germansl_namen(germansl)
     zus = zusatz_namen(zusatz)
@@ -206,12 +209,12 @@ def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None, zusatztax
         CRS = flaechen['quelle'].crs().authid() or CRS
     fl = speicher_layer('flaechen', [feld('flaeche_id', QVariant.String, 40), feld('name', QVariant.String, 200),
                                      feld('bemerkung', QVariant.String, 500)],
-                        'MultiPolygon' if flaechen else 'Polygon')
+                        'MultiPolygon' if (flaechen or leer) else 'Polygon')
     if flaechen:
         flaechen_importieren(fl, flaechen['quelle'], flaechen.get('id_feld'), flaechen.get('name_feld'),
                              flaechen.get('id_auto'))
     feats = []
-    for fid, name, e, n, b, h in ([] if flaechen else TESTFLAECHEN):
+    for fid, name, e, n, b, h in ([] if (flaechen or leer) else TESTFLAECHEN):
         f = QgsFeature(fl.fields())
         f.setAttributes([fid, name, 'Testfläche – durch echte Kartierflächen ersetzen'])
         f.setGeometry(QgsGeometry.fromWkt(
@@ -444,6 +447,7 @@ def projekt_erzeugen(ziel, gpkg):
 
 
 def main():
+    global CRS
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--db', required=True, type=Path)
     ap.add_argument('--ziel', required=True, type=Path)
@@ -454,6 +458,10 @@ def main():
                     help='CSV mit Taxa, die in der Quell-DB fehlen, z. B. Moose (siehe Kopf der Datei)')
     ap.add_argument('--plugin', type=Path, default=Path(__file__).resolve().parent.parent / 'plugin')
     ap.add_argument('--flaechen', type=Path, help='eigene Kartierflächen (GPKG/SHP/…, Polygone) statt Testflächen')
+    ap.add_argument('--leer', action='store_true',
+                    help='Vorlage ohne Flächen (keine Testflächen, keine eigenen Shapes) – zur Weitergabe an Kartierer')
+    ap.add_argument('--crs', help='Koordinatensystem des leeren Flächenlayers, z. B. EPSG:25832 (Standard: %(default)s)',
+                    default=CRS)
     ap.add_argument('--flaechen-layer', help='Layername innerhalb der Datei (bei GeoPackage mit mehreren Layern)')
     ap.add_argument('--id-feld', help='Feld mit der eindeutigen Flächen-ID; ohne Angabe werden die Felder angezeigt')
     ap.add_argument('--id-auto', metavar='PRÄFIX',
@@ -464,6 +472,9 @@ def main():
     ap.add_argument('--ohne-biotope', action='store_true', help='keine Biotoptypen-Kataloge einspielen')
     ap.add_argument('--neu', action='store_true', help='vorhandenes gokart.gpkg überschreiben (Erfassungen gehen verloren!)')
     a = ap.parse_args()
+    if a.leer and a.flaechen:
+        raise SystemExit('--leer und --flaechen schließen sich aus.')
+    CRS = a.crs
     if not a.db.is_file():
         raise SystemExit(f'Datenbank nicht gefunden: {a.db}')
     if a.flaechen and not a.flaechen.is_file():
@@ -489,7 +500,7 @@ def main():
             sicherung = gpkg.with_name(f'gokart_{datetime.now():%Y%m%d_%H%M%S}.gpkg.bak')
             shutil.copy2(gpkg, sicherung)
             print(f'Sicherung: {sicherung}')
-        gpkg_erzeugen(a.db, gpkg, a.germansl, a.zusatz, flaechen, a.zusatztaxa)
+        gpkg_erzeugen(a.db, gpkg, a.germansl, a.zusatz, flaechen, a.zusatztaxa, a.leer)
         projekt_erzeugen(a.ziel, gpkg)
     finally:
         flaechen = src = None          # Layer vor exitQgis freigeben, sonst Absturz beim Beenden

@@ -1,0 +1,48 @@
+GoKart Desktop – QGIS-Plugin (Windows / Linux)
+==============================================
+
+Erfassung von Pflanzenarten und Biotoptypen (Haupt-/Nebenbiotop) je Kartierfläche.
+Die Flächen bringt jede/r Kartierer/in selbst mit (Shape, GeoPackage …).
+
+Voraussetzungen
+---------------
+- QGIS ab 3.22 (Windows: OSGeo4W oder Standalone-Installer, Linux: Paket/Flatpak)
+- gokart.gpkg (GoKart-Vorlage mit Artenliste, Artnachweisen und Biotop-Tabellen,
+  wird separat weitergegeben)
+
+Installation
+------------
+1. QGIS → Erweiterungen → Erweiterungen verwalten und installieren → „Aus ZIP installieren“
+2. GoKart_Desktop_<version>.zip wählen → „Erweiterung installieren“
+3. Unter Erweiterungen → Installiert ggf. „Experimentelle Erweiterungen zeigen“ aktivieren
+   und „GoKart Desktop“ anhaken.
+
+Einrichten (einmal je Projekt)
+------------------------------
+1. Neues QGIS-Projekt, eigene Flächen-Shape laden (Polygone, Feld mit eindeutiger Flächen-ID).
+2. gokart.gpkg per Drag & Drop laden; mindestens die Layer „taxon“, „suchnamen“,
+   „eigene_synonyme“ und „artnachweise“ übernehmen (Layernamen nicht ändern).
+   Die Biotop-Layer lädt das Plugin beim Einrichten selbst.
+3. Menü Erweiterungen → GoKart → „GoKart: Projekt einrichten…“
+   - Flächen: eigener Flächenlayer + Schlüsselfeld (eindeutige ID) + Anzeigefeld
+   - Artnachweise: Layer „artnachweise“, Verweis auf Fläche „flaeche_id“
+   - Biotoptypen: „Kataloge einspielen / aktualisieren“, dann Schlüssel wählen (z. B. SH, NI)
+4. Projekt speichern.
+
+Erfassen: Fläche in der Karte markieren → „Auswahl aus Karte“, Art suchen → „Art speichern“;
+Biotoptyp suchen → „Als Hauptbiotop“ / „Als Nebenbiotop“. Export: Artnachweise als CSV, Artenliste je Fläche (CSV/HTML).
+
+Spracheingabe (optional, offline)
+---------------------------------
+- Windows: OSGeo4W-Shell als Administrator → python -m pip install vosk sounddevice
+- Linux:   python3 -m venv ~/gokart-venv && ~/gokart-venv/bin/pip install vosk sounddevice
+- Deutsches Vosk-Modell (z. B. vosk-model-small-de-0.15) von https://alphacephei.com/vosk/models
+  herunterladen und entpacken; beim ersten Klick aufs Mikrofon den Ordner auswählen.
+
+Hinweise
+--------
+- Linux + NTFS-Partition (Dual-Boot): Projekt besser auf ext4 ablegen oder in QGIS unter
+  Einstellungen → Optionen → Erweitert „walForSqlite3“ = false setzen, sonst können
+  Änderungen in der GeoPackage verloren gehen.
+- Die Biotoptypen-Kataloge (Ordner biotope_kataloge) stammen aus den veröffentlichten
+  Kartieranleitungen der Länder; Quellen siehe biotope_kataloge/README.md.

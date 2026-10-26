@@ -456,7 +456,8 @@ def main():
                     help='CSV mit eigenen Zusatznamen (wissenschaftlicher_name;name)')
     ap.add_argument('--zusatztaxa', type=Path, default=Path(__file__).resolve().parent / 'zusatztaxa.csv',
                     help='CSV mit Taxa, die in der Quell-DB fehlen, z. B. Moose (siehe Kopf der Datei)')
-    ap.add_argument('--plugin', type=Path, default=Path(__file__).resolve().parent.parent / 'plugin')
+    ap.add_argument('--plugin', type=Path, default=None,
+                    help='Ordner mit dem QField-Plugin (Standard: qfield_plugin/)')
     ap.add_argument('--flaechen', type=Path, help='eigene Kartierflächen (GPKG/SHP/…, Polygone) statt Testflächen')
     ap.add_argument('--leer', action='store_true',
                     help='Vorlage ohne Flächen (keine Testflächen, keine eigenen Shapes) – zur Weitergabe an Kartierer')
@@ -517,14 +518,29 @@ def main():
         if a.biotop_schluessel:
             B.qgs_variable_setzen(a.ziel / 'gokart.qgs', B.VAR_SCHLUESSEL, a.biotop_schluessel.upper())
 
-    # Plugin neben das Projekt legen (Name muss dem .qgs entsprechen)
-    if a.plugin.is_dir():
-        shutil.copy2(a.plugin / 'gokart.qml', a.ziel / 'gokart.qml')
-        shutil.copy2(a.plugin / 'gokart_suche.js', a.ziel / 'gokart_suche.js')
-        if (a.plugin / 'gokart_icon.svg').exists():
-            shutil.copy2(a.plugin / 'gokart_icon.svg', a.ziel / 'gokart_icon.svg')
-        print('Plugin kopiert: gokart.qml, gokart_suche.js')
+    # Fototabelle + Layer (wie abgleich.py)
+    import abgleich as A
+    seite = A.Seite('Projekt', a.ziel / 'gokart.qgs')
+    if not seite.hat_fototabelle():
+        seite.fototabelle_anlegen()
+    if not seite.fotolayer_im_projekt():
+        seite.fotolayer_eintragen()
 
+    # Aktuelles QField-Plugin (Biotope/Fotos) neben das Projekt legen
+    ordner = a.plugin or A.PLUGIN_ORDNER
+    qml = ordner / A.PLUGIN_QML
+    if not qml.is_file():
+        qml = ordner / 'gokart.qml'
+    if qml.is_file():
+        shutil.copy2(qml, a.ziel / 'gokart.qml')
+        kopiert = ['gokart.qml']
+        for n in A.PLUGIN_DATEIEN:
+            if (ordner / n).is_file():
+                shutil.copy2(ordner / n, a.ziel / n)
+                kopiert.append(n)
+        print(f'Plugin kopiert aus {ordner.name}/: ' + ', '.join(kopiert))
+    else:
+        print(f'WARNUNG: kein QField-Plugin in {ordner} gefunden')
 
 if __name__ == '__main__':
     main()

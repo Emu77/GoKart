@@ -16,6 +16,11 @@ const faelle = {
        ['Brombeerflur', 'RHr'], ['Brombeer Flur', 'RHr'], ['Bromberflur', 'RHr'], ['Intensivacker', 'AAy'],
        ['Sandmagerrasen', 'TRy'], ['Graudüne', 'KDg'], ['Neophytenflur', 'RHx'], ['Rasenfläche', 'SGr']],
   NI: [['WCN', 'WCN'], ['Erlen-Bruchwald', 'WA'], ['Fichtenforst', 'WZF'], ['Douglasie', 'WZD'], ['ULN', 'ULN']],
+  SH_2003: [['WBe', 'WBe'], ['we be e', 'WBe'], ['Hochmoor', 'MHh'], ['Straßenverkehrsfläche', 'SVs']],
+  HH_1999: [['WBE', 'WBE'], ['Kiefernforst', 'WZK'], ['Weidengebüsch Feuchtstandorte', 'HF']],
+  BE_2002: [['01101', '01101'], ['FQU', '01101'], ['null eins eins null eins', '01101'], ['Dachbegrünung', '12910']],
+  BB_2002: [['Sturzquelle', '0110x1']],
+  SN_2003: [['Hohlweg', 'YH'], ['MNB', 'MNB'], ['Streuobstwiese', 'BS']],
 };
 let ok = 0, n = 0;
 for (const [sch, liste] of Object.entries(faelle)) {

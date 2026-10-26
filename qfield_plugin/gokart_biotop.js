@@ -10,7 +10,8 @@ var BUCHSTABEN = {
     ef: 'f', eff: 'f', f: 'f', ge: 'g', g: 'g', ha: 'h', h: 'h', i: 'i', ih: 'i', jot: 'j', j: 'j',
     ka: 'k', k: 'k', el: 'l', l: 'l', em: 'm', m: 'm', en: 'n', n: 'n', o: 'o', oh: 'o', pe: 'p', p: 'p',
     ku: 'q', q: 'q', er: 'r', r: 'r', es: 's', s: 's', te: 't', t: 't', u: 'u', uh: 'u', vau: 'v', v: 'v',
-    we: 'w', w: 'w', ix: 'x', x: 'x', ypsilon: 'y', y: 'y', zett: 'z', zet: 'z', z: 'z'
+    we: 'w', w: 'w', ix: 'x', x: 'x', ypsilon: 'y', y: 'y', zett: 'z', zet: 'z', z: 'z',
+    null: '0', eins: '1', zwei: '2', zwo: '2', drei: '3', vier: '4', funf: '5', sechs: '6', sieben: '7', acht: '8', neun: '9'
 };
 
 function norm(text) {
@@ -23,7 +24,7 @@ function kompakt(text) { return norm(text).replace(/[^a-z0-9]/g, ''); }
 
 function codeAusSprache(text) {
     var t = norm(text).split(/[\s,.\-]+/).filter(function (w) { return w.length > 0; });
-    if (!t.length || t.length > 5) return null;
+    if (!t.length || t.length > 8) return null;
     if (t.length === 1 && t[0].length <= 4) return t[0];
     var b = t.map(function (w) { return BUCHSTABEN[w]; });
     if (b.every(function (x) { return !!x; })) return b.join('');
@@ -50,6 +51,8 @@ function typHinzufuegen(index, typ) {
     typ._code = kompakt(typ.code);
     typ._name = norm(typ.name);
     typ._nameK = kompakt(typ.name);
+    var alias = /\[([A-Za-z0-9]+)\]\s*$/.exec(typ.name);   // Buchstaben-Code hinter dem Namen (Berlin/Brandenburg)
+    typ._alias = alias ? kompakt(alias[1]) : '';
     typ._teile = typ._name.split(/[\s\-,()\/]+/).map(kompakt).filter(function (x) { return x.length > 0; });
     index.typen.push(typ);
 }
@@ -63,6 +66,7 @@ function abschliessen(index) {
 
 function bewerten(q, qk, sprach, woerter, t) {
     if (qk === t._code || (sprach && sprach === t._code)) return 1.0;
+    if (t._alias && (qk === t._alias || (sprach && sprach === t._alias))) return 0.99;
     if (qk === t._nameK) return 0.97;
     if (qk.length >= 2 && qk.length <= 4 && t._code.indexOf(qk) === 0) return 0.9 - 0.02 * (t._code.length - qk.length);
     if (t._nameK.indexOf(qk) === 0) return 0.88;

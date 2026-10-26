@@ -19,6 +19,21 @@ in `biotoptypen.bund_code` übernommen und bei jeder Erfassung mitgespeichert.
 | MV | LUNG M-V: Anleitung für die Kartierung von Biotoptypen und FFH-LRT | 2013 | – (importieren) |
 | BUND | BfN: Rote Liste der gefährdeten Biotoptypen Deutschlands (Finck et al., NaBiV 156) | 2017 | – (Buch, nicht frei als Datei) |
 
+**Historische Schlüssel** (für Altdaten, z. B. ältere Kartierungen/Shapes – Codes passen nicht zu den aktuellen Fassungen):
+
+| Schlüssel | Quelle | Stand | Im Katalog |
+|---|---|---|---|
+| SH_2003 | LANU S-H: Standardliste der Biotoptypen, 2. Fassung | Mai 2003 | 396, vollständig; `bund_code` = „RL BfN“ der Synopse (BfN 1994), `ffh_lrt` aus der Liste |
+| HH_1999 | Naturschutzamt Hamburg: Biotoptypenschlüssel (tabellarische Übersicht) | Schlüssel 1999 / Anleitung 07/2002 | 514, vollständig |
+| BE_2002 | Senatsverwaltung Berlin: Biotoptypenliste Berlins (Köstler/Fietz) | 2002 | 945; Buchstaben-Code in `[…]` hinter dem Namen (auch suchbar) |
+| BB_2002 | Liste der Biotoptypen Brandenburgs (Zimmermann, LUA), aus der Gegenüberstellung Berlin–Brandenburg | 2002 | 950, evtl. unvollständig |
+| SN_2003 | LfUG Sachsen: Biotopkartierung in Sachsen, Liste der Biotoptypen | 10/2003 | 98 – nur selektive Kartierung (geschützte/wertvolle Biotope) |
+
+Besonderheiten aus den Originalen: SH_2003 vergibt `FGk` doppelt (Kalkreicher Graben und Kanal) – ein Eintrag mit beiden
+Namen; `AOo` bei der Beerenstrauch-Plantage ist ein Tippfehler der Liste (Teil II und Synopse: `AOb`). Groß-/Kleinschreibung
+der SH-Codes vereinheitlicht (2 Groß-, dann Kleinbuchstaben, z. B. `Ffa` → `FFa`).
+Nicht übernommen: Hamburger LRT-Kartieranleitung (Entwurf 2003, nur Teil-Liste), Berlin nach Auhagen 1994, FFH-Gebiete Sachsen.
+
 Die Listen wurden aus den veröffentlichten PDFs übernommen. Vor Weitergabe des Repos prüfen, ob die
 Herausgeber einer Weiterverbreitung zustimmen (SH gibt die Liste auf Anfrage als Excel heraus).
 

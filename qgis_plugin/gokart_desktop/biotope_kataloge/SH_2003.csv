@@ -1,0 +1,404 @@
+# schluessel: SH_2003
+# name: Standardliste der Biotoptypen in Schleswig-Holstein, 2. Fassung
+# land: Schleswig-Holstein
+# stand: Mai 2003 (vervielfältigbares Manuskript)
+# quelle: Landesamt für Natur und Umwelt Schleswig-Holstein (LANU), Flintbek
+# vollstaendig: ja
+# hinweis: Historischer Schlüssel (für Altdaten, z. B. Kartierungen um 2003–2015). bund_code = Spalte „RL BfN“ der Synopse (BfN 1994).
+code;name;nr;obercode;ebene;bund_code;ffh_lrt
+K;Meer und Meeresküste;1;;1;;
+KT;Offene Meeresgebiete;1.1;K;2;01./02;
+KTn;Pelagial der Nordsee;1.1.1;KT;3;01.01;
+KTo;Pelagial der Ostsee oberhalb der Halokline;1.1.2;KT;3;02.01.01;
+KTu;Pelagial der Ostsee unterhalb der Halokline;1.1.3;KT;3;02.01.02;
+KTb;Benthal;1.1.4;KT;3;01.02./02.02;
+KTbs;mit Schlicksubstrat;1.1.4.1;KTb;4;--.--.01;
+KTbf;mit Fein- bis Mittelsandsubstrat;1.1.4.2;KTb;4;--.--.02;
+KTbg;mit Grobsand-, Kies- und Schillsubstrat;1.1.4.3;KTb;4;--.--.03;
+KTbh;mit Hartsubstrat;1.1.4.4;KTb;4;--.--.04.02;
+KTr;Riffe;1.1.5;KT;3;--.--.04.01;1170
+KF;Flachwasserzonen;1.2;K;2;03./04;
+KFp;Pelagial der Flachwasserzone;1.2.1;KF;3;03.01./04.01;1160
+KFb;Benthal der Flachwasserzone;1.2.2;KF;3;03.02/04.02;1160
+KFbs;mit Schlicksubstrat, makrophytenarm;1.2.2.1;KFb;4;--.--.01;1160
+KFbf;mit Fein- bis Mittelsand, makrophytenarm;1.2.2.2;KFb;4;--.--.02;1160
+KFbg;mit Grobsand-, Kies- und Schillsubstrat, makrophytenarm;1.2.2.3;KFb;4;--.--.03;1160
+KFbh;mit Hartsubstrat, makrophytenarm;1.2.2.4;KFb;4;--.--.04;1160
+KFbm;mit Schlick- bis Sandsubstrat, makrophytenreich;1.2.2.5;KFb;4;--.--.05;1160
+KFbv;mit Kies- und Hartsubstrat, makrophytenreich;1.2.2.6;KFb;4;--.--.06;1160
+KFm;Miesmuschelbank des Sublitorals;1.2.3;KF;3;--.--.07;1170
+KFa;Austernbank des Sublitorals;1.2.4;KF;3;03.02.08;1170
+KFr;Sabellaria-Riff des Sublitorals;1.2.5;KF;3;03.02.09;1170
+KFw;Seemoos-Wiese;1.2.6;KF;3;03.02.10;(1160)
+KFs;Sandbank (ständig wasserbedeckt);1.2.7;KF;3;03.02.02.01./04.02.02.01;1110
+KW;Wattbereich;1.3;K;2;;
+KWw;Wattflächen;1.3.1;KW;3;05.01;
+KWwx;Fels-Watt;1.3.1.1;KWw;4;05.01.04;1170
+KWws;Schlick-Watt;1.3.1.2;KWw;4;05.01.01;1140
+KWwm;Misch-Watt;1.3.1.3;KWw;4;05.01.02;1140
+KWwf;Sand-Watt;1.3.1.4;KWw;4;05.01.03;1140
+KWwl;Süßwasser-Watt;1.3.1.5;KWw;4;05.01.06;(1140)
+KWt;Sandbank (trockenfallend);1.3.2;KW;3;05.01.03.03;Zu 1140
+KWm;Muschelbank;1.3.3;KW;3;05.01.07;1170
+KWp;Priele, Wattrinnen;1.3.4;KW;3;05.03;Zu 1140
+KWg;Seegraswiesen;1.3.5;KW;3;05.02.01;1140 / (1160)
+KWq;Queller-Watt;1.3.6;KW;3;05.02.02;1310
+KWs;Schlickgras-Bestände;1.3.7;KW;3;05.02.03;1320
+KL;Unteres Litoral;1.4;K;2;;
+KLa;vegetationsarm, Windwatt;1.4.1;KL;3;06.01;1140
+KLr;vegetationsreich, Windwatt;1.4.2;KL;3;06.02;1310 / 1320
+KN;Salzwiesen und Röhrichte der Nordsee;1.5;K;2;;
+KNu;Untere Salzwiese;1.5.1;KN;3;07.01;1330
+KNo;Höhere Salzwiese, naturnah;1.5.2;KN;3;07.02.01;1330
+KNa;Höhere Salzwiese, anthropo-zoogen;1.5.3;KN;3;07.02.02;1330
+KNr;Brack- und Salzwasserröhricht;1.5.4;KN;3;07.04;(1330)
+KNh;Brackwasser-Hochstaudenflur;1.5.5;KN;3;07.05;(1330)
+KNg;Brackwasserbeeinflußtes Grünland;1.5.6;KN;3;07.06;(1330)
+KNf;Brakwasserbeeinflusste Flutrasen;1.5.7;KN;3;07.06;(1330)
+KO;Salzwiesen und Röhrichte der Ostsee;1.6;K;2;;
+KOg;Salzgrünländereien;1.6.1;KO;3;08.01;1330
+KOr;Brackwasser-Röhricht;1.6.2;KO;3;08.02;(1330)
+KOh;Brackwasser-Hochstaudenflur;1.6.3;KO;3;08.03;(1330)
+KOy;Sonstiges brackwasserbeeinflußtes Grünland;1.6.4;KO;3;;(1330)
+KOf;Brackwasserbeeinflusste Flutrasen;1.6.5;KO;3;;(1330)
+KS;Strände;1.7;K;2;;
+KSs;Sandstrand;1.7.1;KS;3;09.02;
+KSg;Geröllstrand;1.7.2;KS;3;09.03;
+KSb;Blockstrand;1.7.3;KS;3;09.04;
+KSw;Strandwall;1.7.4;KS;3;09.05;
+KSe;Strandsee;1.7.5;KS;3;09.06./24.06.01;*1150
+KSa;Einjährige Spülsäume;1.7.6;KS;3;;1210
+KSv;Mehrjährige Vegetation der Strände;1.7.7;KS;3;;1220
+KD;Küstendünen;1.8;K;2;10;
+KDv;Vordüne;1.8.1;KD;3;10.01;2110
+KDm;Wanderdüne;1.8.2;KD;3;10.07;2110 / 2120
+KDw;Weißdüne;1.8.3;KD;3;10.02;2120
+KDg;Graudüne;1.8.4;KD;3;10.03;*2130
+KDb;Braundüne;1.8.5;KD;3;10.04;*2140
+KDt;Feuchtes Dünental (incl. Dünenmoorkomplex);1.8.6;KD;3;10.05;2190
+KDh;Gehölzbestandene Dünen;1.8.7;KD;3;10.06;
+KDhh;Dünen mit Hippophäe rhamnoides;1.8.7.1;KDh;4;10.06.01;2160
+KDhs;Dünen mit Salix repens ssp. argentea;1.8.7.2;KDh;4;10.06.02;2170
+KDhl;Küstendünen mit natürlichen oder naturnahen Wäldern;1.8.7.3;KDh;4;(10.06.03.);2180
+KDhf;Küstendünen mit naturfernen Gehölzbeständen;1.8.7.4;KDh;4;;
+KK;Fels- und Steilküste;1.9;K;2;11;
+KKh;Sandstein-Felsküste;1.9.1;KK;3;11.01;1230
+KKn;Kliff der nordfriesischen Inseln (Geest);1.9.2;KK;3;11.03;1230
+KKo;Moränensteilküste;1.9.3;KK;3;11.04.01;1230
+W;Wälder, Gebüsche und Kleingehölze;2;;1;;
+WB;Bruchwald und –gebüsch;2.1;W;2;;
+WBe;Bruchwald nährstoffreicher Standorte;2.1.1;WB;3;43.02.02;
+WBb;Birkenbruchwald;2.1.2;WB;3;43.02.01;
+WBk;Rauschbeeren-Kiefernbruchwald;2.1.3;WB;3;;*91D0/2
+WBw;Weidenfeuchtgebüsch;2.1.4;WB;3;(41.01.01.);
+WBg;Gagelgebüsch;2.1.5;WB;3;(41.01.01.);(7120 / 7140)
+WBt;Erlen-/Birkenwälder entwässerter Bruchwaldstandorte;2.1.6;WB;3;;
+WA;Auenwald und –gebüsch;2.2;W;2;;
+WAs;Silberweidenauwald;2.2.1;WA;3;"(43.04.04.;43.05.)";
+WAg;Weidengebüsch in Flußauen (Silber-, Mandel-, Purpurweide);2.2.2;WA;3;"(43.04.04.;43.05.)";
+WAq;Hartholz (Eichen-) Auwald;2.2.3;WA;3;"43.04.05.;(43.05.)";91F0
+WAe;Eschen-Erlen-Auwald;2.2.4;WA;3;"43.04.02./03.;(43.05.)";*91E0
+WE;Feucht- und Sumpfwälder der Quellbereiche und Bachauen sowie grundwasserbeeinflusster Standorte;2.3;W;2;;
+WEs;Erlen-Eschen-Sumpfwald;2.3.1;WE;3;43.03.02./03;
+WEy;Sonstiger Sumpfwald;2.3.2;WE;3;(43.03.);
+WEg;Artenreiche Laubmischwälder grund- oder stauwasser-beeinflusster Standorte;2.3.3;WE;3;(43.07.03.);(9160)
+WEt;Erlenwald entwässerter Standorte;2.3.4;WE;3;;(9160)
+WEq;Eichen-Mischwald grund- oder staufeuchter, basenärmerer Standorte;2.3.5;WE;3;;
+WM;Mesophytische Laubwälder;2.4;W;2;;
+WMu;(Mull-)“Waldgersten“-Buchenwald;2.4.1;WM;3;(43.07.06.01.);9130
+WMue;Eschen-Buchenwald;2.4.1.1;WMu;4;(43.07.06.01.);9130
+WMuk;Mergel-Hangbuchenwald;2.4.1.2;WMu;4;(43.07.06.01.);9130 / (9150)
+WMo;(Moder-)“Perlgras“-Buchenwald;2.4.2;WM;3;(43.07.06.01.);9130
+WMm;„Flattergras“-Buchenwald;2.4.3;WM;3;(43.07.06.01.);9110 / (9130)
+WMs;Schlucht- und Hangmischwald;2.4.4;WM;3;;*9180
+WMq;Eichendominierte Laubwälder mesophytischer Standorte;2.4.5;WM;3;;
+WL;Bodensaure Laubwälder;2.5;W;2;;
+WLa;Bodensaurer („Drahtschmielen“ -)Buchenwald;2.5.1;WL;3;(43.07.05.);9110
+WLai;mit Ilex aquifolium;2.5.1.1;WLa;4;(43.07.05.);9120
+WLq;Bodensaurer Eichenmischwald;2.5.2;WL;3;43.07.05.01;9110 / 9190
+WLb;Birken-Eichenwald;2.5.3;WL;3;43.07.04;9190
+WLp;Traubeneichen-Kiefernwald;2.5.4;WL;3;(43.08.07.);
+WG;Sonstige Gebüsche;2.6;W;2;;
+WGf;Gebüsche feuchter und frischer Standorte;2.6.1;WG;3;41.01.02./04;
+WGt;Gebüsche trockener Standorte;2.6.2;WG;3;41.01.03;
+WGx;Gebüsche aus nicht heimischen oder standortfremeden Gehölzen;2.6.3;WG;3;;
+WN;Durch besondere Nutzungsformen geprägte Wälder;2.7;W;2;;(91__)
+WNq;Eichenkratt;2.7.1;WN;3;;(9190)
+WNn;Sonstiger Niederwald;2.7.2;WN;3;;
+WNm;Mittelwald;2.7.3;WN;3;;
+WNh;Alter Hutewald;2.7.4;WN;3;;
+WNy;Sonstige Typen (z.B. Kopfbaumkulturen);2.7.5;WN;3;;
+WF;Sonstige flächenhaft nutzungsgeprägte, naturfernere Wälder, Aufforstungsflächen und sonstige forstliche Nutzflächen;2.8;W;2;;(91__)
+WFp;Laubholzbestände feuchter bis nasser Standorte;2.8.1;WF;3;43.09.01;
+WFl;Sonstige Laubholzbestände;2.8.2;WF;3;übr.43.09./43.10;
+WFm;Laub-Nadelholz-Mischbestände;2.8.3;WF;3;(43.00.);
+WFn;Nadelforsten;2.8.4;WF;3;(44.00.);
+WFx;Sonstige Forstflächen mit heimischen Baumarten;2.8.5;WF;3;;
+WFy;Sonstige Forstflächen überwiegend mit nicht heim. Baumarten;2.8.6;WF;3;;
+WFz;Sonstige Forstflächen (z.B. Holzlagerflächen);2.8.7;WF;3;(33.00.);
+WP;Pionierwald;2.9;W;2;;
+WPb;Birken- und Zitterpappel-Pionierwald;2.9.1;WP;3;(42.06.02./03.);
+WPe;Ahorn- und Eschen Pionierwald;2.9.2;WP;3;(42.06.02.);
+WPw;Weiden-Pionierwald;2.9.3;WP;3;(42.06.01./02.);
+WPs;Weiden- und Birken-Pionierwald auf nassen Standorten;2.9.4;WP;3;(42.06.01.);
+WPn;Kiefern- und Fichten-Pionierwald;2.9.5;WP;3;(42.06.02./03.);
+WPy;Sonstiger Pionierwald;2.9.6;WP;3;(42.06.);
+WO;Waldlichtungsflur;2.10;W;2;;
+WOr;Basenreicher Standorte;2.10.1;WO;3;39.04.02;
+WOa;Basenarmer Standorte;2.10.2;WO;3;39.04.01;
+WOf;feuchter bis nasser Standorte;2.10.3;WO;3;(39.04.01./02.);
+WR;Waldrand;2.11;W;2;;
+WRt;trockener Standorte;2.11.1;WR;3;42.03;
+WRm;mittlerer Standorte;2.11.2;WR;3;42.02;
+WRf;feuchter bis nasser Standorte;2.11.3;WR;3;42.01;(6430)
+H;Gehölze und sonstige Baumstrukturen;3;;1;;
+HW;Knicks, Wallhecken;3.1;H;2;41.03.01;
+HWt;Knick mit typischer Gehölzvegetation;3.1.1;HW;3;;
+HWo;Knick, gehölzfrei;3.1.2;HW;3;;
+HWx;Knick mit standortfremden/nicht heimischen Gehölzen;3.1.3;HW;3;;
+HWs;Knick, Sonderformen;3.1.4;HW;3;;
+HWr;Redder;3.1.5;HW;3;;
+HF;Feldhecke, ebenerdig;3.2;H;2;41.03.03.01./02.,03;
+HFt;Feldhecke, mit typischer Gehölzvegetation;3.2.1;HF;3;;
+HFx;Feldhecke mit standortfremden/nicht heimischen Gehölzen;3.2.2;HF;3;(41.04.02.);
+HG;Sonstige Gehölze und Gehölzstrukturen;3.3;H;2;;
+HGy;Sonstiges naturnahes Feldgehölz;3.3.1;HG;3;41.02;
+HGx;Standortfremdes Feldgehölz (nicht heimische Arten);3.3.2;HG;3;41.04;
+HGb;Einzelbaum / Baumgruppe;3.3.3;HG;3;41.05.01./02.,03;
+HGa;Allee;3.3.4;HG;3;(41.05.04.);
+HGr;Baumreihe;3.3.5;HG;3;(41.05.04.);
+HGo;Streuobstwiese;3.3.6;HG;3;41.06;
+HGf;Fließgewässer begleitender Gehölzsaum;3.3.7;HG;3;(43.04.02./03.);
+F;Binnengewässer;4;;1;;
+FQ;Quellbereich;4.1;F;2;22;
+FQt;Tümpelquelle, Grundquelle (Limnokrene);4.1.1;FQ;3;22.02;
+FQs;Sturzquelle (Rheokrene);4.1.2;FQ;3;22.03./05;
+FQr;Sicker- oder Rieselquelle (Helokrene);4.1.3;FQ;3;22.01./04;(*7220)
+FQk;Hügelquelle / Quellkuppe;4.1.4;FQ;3;;(*7220)
+FQh;Salz- oder Solquelle;4.1.5;FQ;3;22.06;(*1340)
+FQx;Ausgebauter Quellbereich;4.1.6;FQ;3;22.07;
+FB;Bach;4.2;F;2;;
+FBn;Naturnaher Bach;4.2.1;FB;3;23.02.xx.01;(3260)
+FBs;Bachschlucht;4.2.2;FB;3;23.04.00;(3260)
+FBa;Bach-Altwasser;4.2.3;FB;3;23.04.02;(3260)
+FBx;Naturferner Bach;4.2.4;FB;3;23.02.xx.02;
+FF;Fluß;4.3;F;2;;
+FFn;Naturnaher Fluß;4.3.1;FF;3;23.02.xx.01;(3260)
+FFa;Fluß-Altwasser;4.3.2;FF;3;23.04.02;(3260)
+FFx;Naturferner Fluß;4.3.3;FF;3;23.02.xx.02;
+FFw;Flußwatt;4.3.4;FF;3;(05.01.06.);1130
+FFr;Flussröhricht;4.3.5;FF;3;;
+FFt;Ästuar [Komplex];4.3.6;FF;3;;1130
+FG;Künstliche Fließgewässer / Gräben, Kanäle;4.4;F;2;;
+FGa;Kalk- und nährstoffarmer Graben;4.4.1;FG;3;24.07.04;
+FGk;Kalkreicher Graben / Kanal (Code im Original doppelt vergeben);4.4.2;FG;3;24.07.03;
+FGr;Nährstoffreicher Graben;4.4.3;FG;3;24.07.04;
+FGh;Salzreicher Graben;4.4.4;FG;3;24.07.04;
+FGy;Sonstiger Graben;4.4.5;FG;3;;
+FT;Tümpel;4.5;F;2;;(31__)
+FTw;Waldtümpel;4.5.1;FT;3;24.05;
+FTa;Tümpel in landwirtschaftlich genutzter Fläche;4.5.2;FT;3;24.05;
+FTo;Tümpel in landwirtschaftlich ungenutzter Offenfläche;4.5.3;FT;3;24.05;
+FTr;Tümpel auf Rohboden;4.5.4;FT;3;24.05.,(24.02.03.);
+FK;Kleingewässer;4.6;F;2;;(31__)
+FKa;Naturnahes nährstoffarmes Kleingewässer;4.6.1;FK;3;(24.02./03.);
+FKm;Naturnahes nährstoffarmes Torfstichgewässer;4.6.2;FK;3;24.01.02;
+FKr;Naturnahes nährstoffreiches Kleingewässer;4.6.3;FK;3;(24.04.);
+FKh;Naturnahes salzhaltiges Kleingewässer;4.6.4;FK;3;24.06;
+FKt;Naturnaher nährstoffreicher Stauteich;4.6.5;FK;3;(24.07.);
+FKy;Sonstiges naturnahes Kleingewässer;4.6.6;FK;3;24.04.00;
+FW;Natürliche oder naturgeprägte Flachgewässer, Weiher;4.7;F;2;;(31__)
+FWw;Weiher;4.7.1;FW;3;24.03.03./(24.04.);
+FWt;Naturgeprägter Teich;4.7.2;FW;3;(24.07.);
+FWk;Naturgeprägtes Kooggewässer;4.7.3;FW;3;(24.06.01.);
+FS;Seen;4.8;F;2;;31__
+FSo;Oligotropher See;4.8.1;FS;3;(24.02.);3110
+FSm;Oligo- bis mesotropher See;4.8.2;FS;3;24.03;3130 / 3140
+FSma;basenarm;4.8.2.1;FSm;4;(24.02.02.01.);3130
+FSmk;kalkreich;4.8.2.2;FSm;4;(24.02.02.02.);3140
+FSe;Eutropher See;4.8.3;FS;3;24.03.03./04;3150
+FSd;Dystropher See;4.8.4;FS;3;24.01.01;3160
+FSw;Wehle;4.8.5;FS;3;(24.03.);(31__)
+FX;Künstliche oder künstlich überprägte Stillgewässer;4.9;F;2;;
+FXb;Abbaugewässer;4.9.1;FX;3;24.07.13;
+FXf;Fischteich;4.9.2;FX;3;24.07.02;
+FXk;Klärteich;4.9.3;FX;3;24.07.05;
+FXl;Löschteich;4.9.4;FX;3;(24.07.);
+FXr;Regenwasserrückhaltebecken;4.9.5;FX;3;24.07.07;
+FXy;Sonstiges künstliches Stillgewässer;4.9.6;FX;3;(24.07.);
+FV;Verlandungsbereiche;4.10;F;2;(24.00.);
+FVm;Verl.Ber. nährstoffarmer Gewässer mit Flut- oder Schwingrasen bildenden Moosen;4.10.1;FV;3;(24.08.06.);
+FVe;Verl.Ber. nährstoffarmer Gewässer dominiert von Seggen/ Wollgras;4.10.2;FV;3;;
+FVu;Verl.Ber. dominiert von Tauchblattpflanzen;4.10.3;FV;3;;
+FVs;Verl.Ber. dominiert von Schwimmblattpflanzen;4.10.4;FV;3;(24.00).2550;
+FVr;Verl.Ber. mit Röhricht;4.10.5;FV;3;38.02;
+FVf;Verl.Ber. nährstoffreicher Gewässer mit Flutrasen/Binsen;4.10.6;FV;3;(24.08.05.);
+FVc;Verl.Ber. nährstoffreicher Gewässer dominiert von Groß-Seggen;4.10.7;FV;3;;
+M;Hoch- und Übergangsmoore;5;;1;;
+MH;Hoch- und Übergangsmoore;5.1;M;2;36.01.01./36.02.01;
+MHh;Hochmoor;5.1.1;MH;3;36.01.01;(*7110 / 7120)
+MHr;Marschrand-/Talrand-Übergangsmoore;5.1.2;MH;3;;(*7110 / 7140 / 7120)
+MHc;Heidemoor;5.1.3;MH;3;;(7140)
+MHk;Moorschlatt / Kesselmoor;5.1.4;MH;3;;(*7110 / 7140 / 7120)
+MHy;Sonstiges Hoch- oder Übergangsmoor;5.1.5;MH;3;;(*7110 / 7140 / 7120)
+MHa;Anmoorheide;5.1.6;MH;3;;(7140)
+MHw;Birkenmoorwald;5.1.7;MH;3;;*91D0/1
+MS;Moorstadien;5.2;M;2;;71__
+MSs;Bult-Schlenken-Komplex;5.2.1;MS;3;;(7150)
+MSe;Wollgras-Stadium;5.2.2;MS;3;36.03.01;
+MSz;Moorheide-Stadium;5.2.3;MS;3;36.03.01;
+MSm;Pfeifengras-Degenerationsstadium;5.2.4;MS;3;36.03.01;
+MSb;Birken-Stadium der Degeneration;5.2.5;MS;3;43.01.01;
+MSt;Regenerierende Torfstiche;5.2.6;MS;3;36.04.01;
+MSv;Sonstige mit lückiger Vegetation bewachsene Regenerationsfläche;5.2.7;MS;3;(36.04.02.);
+MSw;Aufgestaute Regenerationsfläche;5.2.8;MS;3;36.04.02.03./04;
+MA;Abtorfungsbereich;5.3;M;2;36.04.02.01;(7120 / 7140)
+N;Gehölzfreie Biotope der Niedermoore, Sümpfe und Ufer;6;;1;;
+NS;Niedermoore, Sümpfe;6.1;N;2;;
+NSa;Basen- und nährstoffarmer Sumpf;6.1.1;NS;3;(35.01.01.01.);(7140)
+NSr;Basenreicher und nährstoffarmer Sumpf;6.1.2;NS;3;(35.01.02.01.);(7230 / 2193)
+NSs;Seggenried;6.1.3;NS;3;37.01.02;(7230)
+NSb;Binsen- und Simsenried;6.1.4;NS;3;(37.00.);(7230 ?)
+NSh;Staudensumpf;6.1.5;NS;3;(37.00.);6430 / (1130)
+NR;Landröhrichte;6.2;N;2;;
+NRs;Schilf-/Rohrkolben-/Teichsimsen-Röhrichte;6.2.1;NR;3;38.01./02./03;
+NRr;Rohrglanzgras-/Wasserschwaden-Röhrichte;6.2.2;NR;3;38.05./06;
+NRc;Kalkreiches Röhricht mit Cladium mariscus;6.2.3;NR;3;38.04;*7210
+NP;Pioniervegetation (wechsel-)nasser Standorte;6.3;N;2;;
+NPa;Pion.Veg. nährstoffarmer Standorte;6.3.1;NP;3;;
+NPr;Pion.Veg. nährstoffreicher Standorte;6.3.2;NP;3;;
+NU;Uferstaudenfluren;6.4;N;2;;
+NUs;Uferstaudenflur;6.4.1;NU;3;;(6430)
+NH;Salzvegetation des Binnenlandes;6.5;N;2;(35.03.);
+NHs;Naturnaher Salzsumpf;6.5.1;NH;3;;(*1340)
+NHy;Sonstige Salzvegetation des Binnenlandes;6.5.2;NH;3;;(*1340)
+T;Heiden, Magerrasen, Binnendünen;7;;1;;
+TH;Zwergstrauchheiden;7.1;T;2;;
+THt;Trockenheide des Flachlandes;7.1.1;TH;3;40.03;4030
+THf;Feuchte Sandheide;7.1.2;TH;3;40.02;4010
+TR;Mager- und Trockenrasen;7.2;T;2;;
+TRm;kalkreiche Halbtrockenrasen;7.2.1;TR;3;;6210 / (*6210)
+TRb;Blauschillergrasrasen;7.2.2;TR;3;;*6120
+TRa;kalkarme Sand-Magerrasen;7.2.3;TR;3;34.04.02;
+TRn;Borstgras-Rasen;7.2.4;TR;3;34.06.01;*6230
+TRs;Artenarme Sukzessionsstadien;7.2.5;TR;3;;
+TRo;Offenbereiche trocken-magerer Standorte;7.2.6;TR;3;;(61 / 62)
+TB;Binnendünen;7.3;T;2;;
+TBn;Binnendüne mit naturnaher Vegetation;7.3.1;TB;3;;
+TBns;mit offenen Grasflächen mit Silbergras und Straußgras;7.3.1.1;TBn;4;(32.00.);2330
+TBnc;mit Sandheide (dom. Calluna und Genista);7.3.1.2;TBn;4;(32.00.);2310
+TBne;mit Sandheide (dom. Calluna und Empetrum);7.3.1.3;TBn;4;(32.00.);2320
+TBf;Binnendüne mit naturferner Vegetation;7.3.2;TB;3;;
+G;Grünland;8;;1;;
+GM;Mesophiles Grünland frischer bis mäßig feuchter Standorte;8.1;G;2;;
+GMm;Mesophiles Grünland;8.1.1;GM;3;;(6510)
+GMma;kalkarmer Standorte;8.1.1.1;GMm;4;;
+GMmk;kalkreicher Standorte;8.1.1.2;GMm;4;;
+GMh;Mesophiles Marschengrünland mit Salzeinfluß;8.1.2;GM;3;;(6510)
+GN;Seggen- und binsenreiche Naßwiesen;8.2;G;2;(35.02.);
+GNa;Basen- und nährstoffarme Naßwiese;8.2.1;GN;3;;(6410)
+GNb;Basenreiche, nährstoffarme Naßwiese;8.2.2;GN;3;;6410
+GNm;Magere Naßwiese;8.2.3;GN;3;;
+GNr;Nährstoffreiche Naßwiese;8.2.4;GN;3;;
+GNh;Von Hochstauden geprägte Naßwiese;8.2.5;GN;3;;(6430)
+GF;Sonstiges artenreiches Feucht- und Naßgrünland;8.3;G;2;(35.02.);
+GFc;Sumpfdotterblumen-Wiese;8.3.1;GF;3;;
+GFb;Brenndolden Wiese / Stromtalwiese;8.3.2;GF;3;;6440
+GFf;Flutrasen;8.3.3;GF;3;35.02.04;
+GFy;Sonstige wechselfeuchte Wiese;8.3.4;GF;3;;
+GFh;Von Hochstauden geprägtes Feucht- und Naßgrünland;8.3.5;GF;3;;(6430)
+GI;Artenarmes Intensivgrünland;8.4;G;2;(34.08.01.);
+GIm;Int.G. auf mineralischen Standorten;8.4.1;GI;3;;
+GIn;Int.G. auf Niedermoorstandorten;8.4.2;GI;3;;
+GIh;Int.G. auf Hochmoorstandorten;8.4.3;GI;3;;
+GIe;Einsaatgrünland;8.4.4;GI;3;(34.08.01.02.);
+GIy;Sonstiges Weideland;8.4.5;GI;3;(34.08.01.);
+GIa;Int.G. auf Auenstandorten;8.4.6;GI;3;;
+A;Acker- und Gartenbau-Biotope;9;;1;;
+AA;Acker;9.1;A;2;33.01.03;
+AAs;Sandacker;9.1.1;AA;3;33.01.05./06;
+AAl;Lehmacker;9.1.2;AA;3;33.01.07;
+AAm;Mooracker;9.1.3;AA;3;;
+AG;Gartenbaufläche;9.2;A;2;;
+AGg;Gemüse-Gartenbau;9.2.1;AG;3;;
+AGb;Blumen-Gartenbau;9.2.2;AG;3;;
+AB;Baumschule;9.3;A;2;41.07.05;
+ABb;Baumschule;9.3.1;AB;3;41.07.06;
+ABw;Weihnachtsbaum-Plantage;9.3.2;AB;3;;
+AO;Obstplantage;9.4;A;2;;
+AOo;Obstbaum-Plantage;9.4.1;AO;3;41.07.01./02./03;
+AOb;Beerenstrauch-Plantage;9.4.2;AO;3;41.07.04;
+R;Ruderalfluren;10;;1;;
+RH;(Halb-) Ruderale Gras- und Staudenflur;10.1;R;2;;
+RHf;feuchter Standorte;10.1.1;RH;3;39.00;
+RHm;mittlerer Standorte;10.1.2;RH;3;39.07.03./(39.00.);
+RHt;trockenerer Standorte;10.1.3;RH;3;39.07.01./02.,(39.00.)4120,(4700);
+X;Besondere, geomorphologisch definierte Biotope;11;;1;;
+XSh;Steiler Hang im Binnenland;11.1;X;2;;
+XHö;Höhle;11.2;X;2;31.01.,(31.00.);(8310)
+S;Siedlungsbiotope;12;;1;;
+SB;Biotope der gemischten Bauflächen/Stadtgebiete;12.1;S;2;;
+SBi;Moderne Innenstadt;12.1.1;SB;3;;
+SBa;Altstadt;12.1.2;SB;3;;
+SBb;Blockbebauung;12.1.3;SB;3;;
+SBr;Blockrandbebauung;12.1.4;SB;3;;
+SBz;Zeilenbebauung;12.1.5;SB;3;;
+SBh;Großformbebauung und Hochhäuser;12.1.6;SB;3;;
+SBe;Einzel- und Reihenhausbebauung (ohne Parkvillen);12.1.7;SB;3;53.01.03;
+SBv;Alte Villen mit parkartigen Gärten;12.1.8;SB;3;;
+SBf;Öffentliche Gebäude mit Freiflächen;12.1.9;SB;3;;
+SD;Biotope der gemischten Baufläche/Dorfgebiete;12.2;S;2;;
+SDs;Dörfliche Siedlungsflächen;12.2.1;SD;3;;
+SDp;Landwirtschaftliche Produktionsanlagen/Großbetriebe;12.2.2;SD;3;;
+SDl;Ländliche Wohnformen;12.2.3;SD;3;;
+SDv;Verstädterte Dorfgebiete;12.2.4;SD;3;;
+SI;Biotope der industriellen und gewerblichen Bauflächen/Ver- und Entsorgungsanlagen;12.3;S;2;;
+SIi;Industrieflächen und stark versiegelte Ver- und Entsorgungsanlagen;12.3.1;SI;3;;
+SIg;Gewerbegebiete, Gewerbebetriebe;12.3.2;SI;3;;
+SIk;Kläranlagen / Rieselfelder;12.3.3;SI;3;54.03./(04.);
+SId;Bauschutt- und Mülldeponien;12.3.4;SI;3;54.01;
+SIa;Industrielle Absetzbecken;12.3.5;SI;3;(54.02.03.);
+SP;(Öffentliche) Grün- und Parkanlagen;12.4;S;2;;
+SPi;Intensiv gepflegte Grünanlagen;12.4.1;SP;3;(34.09.02.);
+SPe;Extensiv gepflegte Grünanlage;12.4.2;SP;3;(34.09.01.);
+SPp;Öffentlicher Park;12.4.3;SP;3;;
+SPh;Historische Garten-/Parkanlage;12.4.4;SP;3;;
+SPb;Botanischer Garten;12.4.5;SP;3;;
+SPz;Zoologischer Garten, Tiergehege;12.4.6;SP;3;;
+SE;Sport- und Erholungsanlagen;12.5;S;2;;
+SEf;Freibad an Seen etc. (ohne Betonbecken);12.5.1;SE;3;;
+SEs;Schwimmbad (Betonbecken, Gebäude, Rasenflächen etc.);12.5.2;SE;3;;
+SEc;Campingplatz;12.5.3;SE;3;;
+SEg;Golfplatz;12.5.4;SE;3;;
+SEb;Ballspielanlage;12.5.5;SE;3;;
+SEr;Reitplatz, Rennbahn;12.5.6;SE;3;;
+SEw;Sportschießplatze, -stand;12.5.7;SE;3;;
+SEt;Tennis- oder Squashanlage;12.5.8;SE;3;;
+SEv;Kommerzielle Vergnügungs- und Freizeitanlage;12.5.9;SE;3;;
+SEk;Kinderspielplatz;12.5.10;SE;3;;
+SG;Sonstige Biotope der Grünflächen;12.6;S;2;;
+SGf;Friedhof;12.6.1;SG;3;;
+SGh;Ferienhaussiedlunge;12.6.2;SG;3;;
+SGg;Botanischer oder zoologischer Garten, Tiergehege;12.6.3;SG;3;;
+SGk;Kleingartenanlage;12.6.4;SG;3;(51.03.);
+SGa;Gärten;12.6.5;SG;3;(51.03.);
+SGb;Bauerngarten;12.6.5.1;SGa;4;;
+SGo;Gemüse- und Beerenobstgarten;12.6.5.2;SGa;4;;
+SGz;Ziergarten;12.6.5.3;SGa;4;;
+SGn;Naturgarten, extensiv gepflegt;12.6.5.4;SGa;4;;
+SV;Biotope der Verkehrsanlagen/Verkehrsflächen incl. Küstenschutz;12.7;S;2;;
+SVb;Bahn-/Gleisanlage;12.7.1;SV;3;52.04.01;
+SVs;Straßenverkehrsfläche;12.7.2;SV;3;52.01./(02.);
+SVf;Flugplatz;12.7.3;SV;3;;
+SVk;Kanal / Hafenanlage;12.7.4;SV;3;52.04.02;
+SVv;Sonstige Verkehrsanlage;12.7.5;SV;3;;
+SVd;Damm oder Deich;12.7.6;SV;3;;
+SVx;Sonstiges Küstenschutz- bzw. Hochwasserschutzbauwerk;12.7.7;SV;3;;
+SA;Biotope der Abgrabungs- und Aufschüttungsflächen;12.8;S;2;;
+SAg;Abgrabungsfläche;12.8.1;SA;3;;
+SAs;Aufschüttungsfläche;12.8.2;SA;3;;
+SAw;Lärm- und Sichtschutzwälle;12.8.3;SA;3;;
+SAy;Spülfelder;12.8.4;SA;3;24.07.09;
+SM;MiIitärische Flächen mit Bebauung;12.9;S;2;;
+SMk;Kasernengelände, militärische Betriebsflächen;12.9.1;SM;3;;
+SMd;Depotflächen;12.9.2;SM;3;;

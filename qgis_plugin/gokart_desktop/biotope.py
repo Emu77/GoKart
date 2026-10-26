@@ -236,7 +236,10 @@ BUCHSTABEN = {
     'o': 'o', 'oh': 'o', 'pe': 'p', 'p': 'p', 'ku': 'q', 'q': 'q', 'er': 'r', 'r': 'r', 'es': 's', 's': 's',
     'te': 't', 't': 't', 'u': 'u', 'uh': 'u', 'vau': 'v', 'v': 'v', 'we': 'w', 'w': 'w', 'ix': 'x', 'x': 'x',
     'ypsilon': 'y', 'y': 'y', 'zett': 'z', 'zet': 'z', 'z': 'z',
+    'null': '0', 'eins': '1', 'zwei': '2', 'zwo': '2', 'drei': '3', 'vier': '4', 'fuenf': '5', 'funf': '5',
+    'sechs': '6', 'sieben': '7', 'acht': '8', 'neun': '9',
 }
+ALIAS = re.compile(r'\[([A-Za-z0-9]+)\]\s*$')   # Buchstaben-Code hinter dem Namen, z. B. Berlin "Quellen [FQU]"
 
 
 def norm(s):
@@ -251,7 +254,7 @@ def kompakt(s):
 def code_aus_sprache(text):
     """'W M Ypsilon' / 'we em ypsilon' / 'WMY' → 'wmy'; sonst None."""
     t = [w for w in re.split(r'[\s,.\-]+', norm(text)) if w]
-    if not t or len(t) > 5:
+    if not t or len(t) > 8:
         return None
     if len(t) == 1 and len(t[0]) <= 4:
         return t[0]
@@ -272,6 +275,9 @@ def bewerten(eingabe, typ):
     sprach = code_aus_sprache(eingabe)
     if qk == code or (sprach and sprach == code):
         return 1.0
+    a = ALIAS.search(typ['name'])
+    if a and (qk == kompakt(a.group(1)) or (sprach and sprach == kompakt(a.group(1)))):
+        return 0.99
     name, nk = norm(typ['name']), kompakt(typ['name'])
     if qk == nk:
         return 0.97

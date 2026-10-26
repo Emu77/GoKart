@@ -39,7 +39,7 @@ Geplante Funktionen:
 - Build-Skript (PyQGIS) erzeugt GeoPackage + QGIS-Projekt aus der SQLite-Datenbank und GermanSL
 
 ### Biotoptypen (Bund / Länder)
-- Kataloge je Schlüssel als CSV: `qgis_plugin/gokart_desktop/biotope_kataloge/` (SH weitgehend, NI Wälder; Rest per Importer)
+- Kataloge je Schlüssel als CSV: `qgis_plugin/gokart_desktop/biotope_kataloge/` (aktuell: SH weitgehend, NI Wälder; historisch: SH 2003, HH 1999, BE/BB 2002, SN 2003)
 - Importer aus Original-PDF/Excel: `qfield/werkzeuge/biotope_katalog_import.py`
 - Ins Projekt: `qfield/werkzeuge/biotope_einspielen.py <Projekt> --schluessel SH` (Tabellen `biotoptypen`, `biotopzuordnung`)
 - Geltender Schlüssel = Projektvariable `gokart_biotop_schluessel` (GoKart Desktop → Einrichten…)

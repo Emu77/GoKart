@@ -97,13 +97,30 @@ QT_QPA_PLATFORM=offscreen python3 test/qml_harness_biotope.py projekt_kopie   # 
 
 ## Plugin in vorhandene Projekte übernehmen
 
-`plugin/` ist die einzige Quelle des Plugins. Projektordner (`qfield_projekt/`, `gokart_qfield/`) enthalten nur Kopien.
+`../qfield_plugin/` ist die einzige Quelle des Plugins (`GoKart_Wohnung.qml` + `gokart_*.js/svg`).
+Projektordner (`gokart_qfield/`, QField-Sync-Exporte) enthalten nur Kopien; die QML wird automatisch
+so benannt wie die Projektdatei (`kobm_qfield.qgs` → `kobm_qfield.qml`).
 Nach Änderungen am Plugin – ohne Neubau, GeoPackage und `.qgs` bleiben unverändert:
 
 ```bash
 python3 werkzeuge/plugin_aktualisieren.py ../gokart_qfield            # kopieren
+python3 werkzeuge/plugin_aktualisieren.py ~/QField/export/kobm        # QField-Sync-Export
 python3 werkzeuge/plugin_aktualisieren.py ../gokart_qfield --pruefen  # nur vergleichen
 ```
+
+`plugin/` (alte Version 0.1, nur Arten) wird nicht mehr verwendet.
+
+## Zip fürs Tablet (Telegram, Mail, USB)
+
+Nach „QField Sync → Für QField verpacken“:
+
+```bash
+python3 werkzeuge/qfield_paket.py ~/QField/export/kobm           # → ~/QField/export/kobm.zip
+python3 werkzeuge/qfield_paket.py ~/QField/export/kobm --datum   # → kobm_2026-10-27.zip
+```
+
+Legt das aktuelle Plugin passend benannt dazu, lässt `*~`, `*.bak`, `-wal`/`-shm` weg und warnt,
+wenn ein GeoPackage noch in QGIS geöffnet ist. In QField: „Projekt aus ZIP importieren“.
 
 ## Suche – wie sie funktioniert
 

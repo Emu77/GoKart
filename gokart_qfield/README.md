@@ -6,13 +6,13 @@ Fertiges QField-Projekt, erzeugt mit `qfield/werkzeuge/build_gokart_projekt.py -
 |---|---|---|
 | `gokart.qgs` | ja | Build-Skript |
 | `gokart.gpkg` | **nein** (`*.gpkg` in `.gitignore`) | Build-Skript – enthält Flächen und Erfassungen |
-| `gokart.qml`, `gokart_suche.js`, `gokart_icon.svg` | ja, **nur Kopie** | Quelle ist `qfield/plugin/` |
+| `gokart.qml`, `gokart_*.js`, `gokart_*.svg` | ja, **nur Kopie** | Quelle ist `qfield_plugin/` (`GoKart_Wohnung.qml`) |
 
 ## Wichtig
 
 - **`gokart.gpkg` fehlt nach dem Klonen.** Ohne die Datei öffnet sich das Projekt ohne Layer.
   Das GeoPackage liegt nur lokal bzw. auf dem Gerät, weil es eigene Kartierflächen und Erfassungen enthält.
-- **Plugin nie hier bearbeiten**, sondern in `qfield/plugin/`. Danach Kopie aktualisieren:
+- **Plugin nie hier bearbeiten**, sondern in `qfield_plugin/`. Danach Kopie aktualisieren:
   ```bash
   python3 qfield/werkzeuge/plugin_aktualisieren.py gokart_qfield            # kopieren
   python3 qfield/werkzeuge/plugin_aktualisieren.py gokart_qfield --pruefen  # nur vergleichen

@@ -63,7 +63,8 @@ Geplante Funktionen:
 - `pflanzen/GoKart_Pflanzen_Datenbank/` – SQLite-Datenbank
 - `pflanzen/originaldaten/` – Ausgangsdaten
 - `pflanzen/sprachtest.py` – Test der Spracherkennung
-- `qfield/plugin/` – QField-Projekt-Plugin (`gokart.qml`, Suchlogik `gokart_suche.js`)
+- `qfield_plugin/` – QField-Projekt-Plugin (`GoKart_Wohnung.qml`, `gokart_suche.js`, `gokart_biotop.js`; Arten, Fotos, Biotoptypen)
+- `qfield/werkzeuge/qfield_paket.py` – QField-Sync-Export + Plugin als Zip fürs Tablet
 - `qfield/werkzeuge/` – Projekt-Build (GeoPackage + QGIS-Projekt), Namensaufbereitung
 - `qfield/test/` – Suchtest (Node) und QField-Simulation (PySide6)
 - `gokart_qfield/` – fertiges QField-Projekt mit eigenen Flächen (`gokart.gpkg` nicht im Repo, Plugin nur Kopie – siehe dortige README)

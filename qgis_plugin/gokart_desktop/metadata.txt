@@ -1,7 +1,7 @@
 [general]
 name=GoKart Desktop
 qgisMinimumVersion=3.22
-version=0.5.0
+version=0.6.0
 Author=GoKart Projekt
 email=
 description=Pflanzenarten und Biotoptypen (Bund/Länder-Schlüssel) Flächen zuordnen; Offline-Spracherkennung optional über Vosk

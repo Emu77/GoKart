@@ -32,6 +32,7 @@ from qgis.core import (QgsCoordinateTransform, QgsFeature, QgsGeometry,
 from qgis.gui import QgsMapLayerComboBox, QgsFieldComboBox
 
 from . import biotope as B
+from . import module as M
 
 try:  # QGIS >= 3.34
     from qgis.core import Qgis
@@ -108,6 +109,36 @@ def biotop_layer_laden(gpkg):
             p.addMapLayer(lyr)
 
 
+FOTO_TABELLE = 'fotos'
+FOTO_SQL = (f'CREATE TABLE "{FOTO_TABELLE}" (fid INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, '
+            'flaeche_id TEXT, taxon_id INTEGER, datei TEXT, kommentar TEXT, aufgenommen_am TEXT, '
+            'lon REAL, lat REAL)')   # wie qfield/werkzeuge/abgleich.py
+
+
+def fotos_einrichten(gpkg):
+    """Tabelle fotos in der GeoPackage anlegen (falls fehlend) und als Layer "fotos" ins Projekt holen."""
+    import sqlite3
+    con = sqlite3.connect(gpkg)
+    try:
+        if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (FOTO_TABELLE,)).fetchone():
+            con.execute(FOTO_SQL)
+            con.execute("INSERT INTO gpkg_contents (table_name, data_type, identifier, last_change) "
+                        "VALUES (?, 'attributes', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        (FOTO_TABELLE, FOTO_TABELLE))
+            if con.execute("SELECT 1 FROM sqlite_master WHERE name='gpkg_ogr_contents'").fetchone():
+                con.execute('INSERT INTO gpkg_ogr_contents (table_name, feature_count) VALUES (?, 0)', (FOTO_TABELLE,))
+            con.commit()
+    finally:
+        con.close()
+    p = QgsProject.instance()
+    if not p.mapLayersByName(FOTO_TABELLE):
+        lyr = QgsVectorLayer(f'{gpkg}|layername={FOTO_TABELLE}', FOTO_TABELLE, 'ogr')
+        if not lyr.isValid():
+            return False
+        p.addMapLayer(lyr)
+    return True
+
+
 class GoKartSetupDialog(QDialog):
     """Legt fest, über welche Felder Fläche und Artnachweis verknüpft sind."""
 
@@ -116,6 +147,13 @@ class GoKartSetupDialog(QDialog):
         self.setWindowTitle('GoKart – Projekt einrichten')
         self.setMinimumWidth(460)
         form = QFormLayout(self)
+
+        # Was im Gelände erfasst wird – steuert die Knöpfe in QField (Projektvariable gokart_module)
+        self.mod = {m: QCheckBox(M.NAMEN[m]) for m in M.ALLE}
+        mod_zeile = QHBoxLayout()
+        for cb in self.mod.values():
+            mod_zeile.addWidget(cb)
+        mod_zeile.addStretch(1)
 
         self.area_layer = QgsMapLayerComboBox()
         self.area_layer.setFilters(F_POLY)
@@ -136,16 +174,20 @@ class GoKartSetupDialog(QDialog):
         self.biotop_info = QLabel()
         self.biotop_info.setWordWrap(True)
 
+        form.addRow(QLabel('<b>Erfassen</b>'))
+        form.addRow(mod_zeile)
         form.addRow(QLabel('<b>Flächen</b>'))
         form.addRow('Layer', self.area_layer)
         form.addRow('Schlüsselfeld', self.area_key)
         form.addRow('Anzeigefeld', self.area_label)
-        form.addRow(QLabel('<b>Artnachweise</b>'))
+        self.obs_titel = QLabel('<b>Artnachweise</b>')
+        form.addRow(self.obs_titel)
         form.addRow('Layer', self.obs_layer)
         form.addRow('Verweis auf Fläche', self.obs_fk)
         form.addRow(self.make_relation)
         form.addRow(self.info)
-        form.addRow(QLabel('<b>Biotoptypen</b>'))
+        self.biotop_titel = QLabel('<b>Biotoptypen</b>')
+        form.addRow(self.biotop_titel)
         form.addRow('Schlüssel', self.biotop_key)
         form.addRow(self.biotop_import)
         form.addRow(self.biotop_info)
@@ -160,10 +202,31 @@ class GoKartSetupDialog(QDialog):
         self.obs_fk.fieldChanged.connect(self.check)
         self.obs_layer.layerChanged.connect(lambda _l: self.fill_biotop_keys())
         self.biotop_import.clicked.connect(self.import_catalogs)
+        for cb in self.mod.values():
+            cb.toggled.connect(self.module_umschalten)
         self.prefill()
         self.fill_biotop_keys()
+        self.module_umschalten()
+
+    def module(self):
+        return {m for m, cb in self.mod.items() if cb.isChecked()}
+
+    def module_umschalten(self, *args):
+        """Nur die Einstellungen der gewählten Module bearbeitbar machen."""
+        m = self.module()
+        arten, biotope = M.ARTEN in m, M.BIOTOPE in m
+        self.obs_fk.setEnabled(arten)
+        self.obs_titel.setText('<b>Artnachweise</b>' if arten
+                               else '<b>GoKart-GeoPackage</b> (Layer der Artnachweise, bestimmt die Datei)')
+        self.make_relation.setEnabled(arten or biotope)
+        for w in (self.biotop_key, self.biotop_import, self.biotop_info):
+            w.setEnabled(biotope and (w is not self.biotop_import or bool(self.obs_gpkg())))
+        self.check()
 
     def prefill(self):
+        aktiv = M.lesen(project_var(M.VAR_MODULE))
+        for m, cb in self.mod.items():
+            cb.setChecked(m in aktiv)
         fl = find_layer(project_var(VAR_AREA_LAYER))
         nl = find_layer(project_var(VAR_OBS_LAYER)) or find_layer('artnachweise')
         if fl is not None:
@@ -207,7 +270,7 @@ class GoKartSetupDialog(QDialog):
         else:
             self.biotop_info.setText(f'{len(liste)} Schlüssel in {Path(gpkg).name}. '
                                      f'Weitere Länder: biotope_katalog_import.py, dann erneut einspielen.')
-        self.biotop_import.setEnabled(bool(gpkg))
+        self.biotop_import.setEnabled(bool(gpkg) and self.mod[M.BIOTOPE].isChecked())
 
     def import_catalogs(self):
         gpkg = self.obs_gpkg()
@@ -243,7 +306,7 @@ class GoKartSetupDialog(QDialog):
                 notes.append('⚠ Flächen ohne Schlüssel sind nicht zuordenbar.')
             if dupes:
                 notes.append('⚠ Schlüssel ist nicht eindeutig!')
-            if nl is not None and fk:
+            if nl is not None and fk and M.ARTEN in self.module():
                 kt = fl.fields().field(key).typeName().lower()
                 ft = nl.fields().field(fk).typeName().lower()
                 text = ('char', 'text', 'string')
@@ -254,19 +317,39 @@ class GoKartSetupDialog(QDialog):
     def apply(self):
         fl, key = self.area_layer.currentLayer(), self.area_key.currentField()
         nl, fk = self.obs_layer.currentLayer(), self.obs_fk.currentField()
-        if fl is None or nl is None or not key or not fk:
+        mods = self.module()
+        arten = M.ARTEN in mods
+        if not mods:
+            QMessageBox.warning(self, 'GoKart', 'Bitte mindestens eine Erfassung wählen (Arten, Fotos oder Biotoptypen).')
+            return
+        if fl is None or nl is None or not key or (arten and not fk):
             QMessageBox.warning(self, 'GoKart', 'Bitte beide Layer und Felder wählen.')
             return
+        gpkg = self.obs_gpkg()
+        if (mods & {M.FOTOS, M.BIOTOPE}) and not gpkg:
+            QMessageBox.warning(self, 'GoKart', 'Fotos und Biotoptypen brauchen eine GeoPackage – '
+                                                'der Artnachweis-Layer liegt in keiner.')
+            return
+        if M.FOTOS in mods:
+            try:
+                if not fotos_einrichten(gpkg):
+                    raise RuntimeError('Layer "fotos" ungültig')
+            except Exception as e:
+                QMessageBox.warning(self, 'GoKart', f'Fototabelle konnte nicht angelegt werden: {e}')
+                return
+        if M.BIOTOPE in mods:
+            biotop_layer_laden(gpkg)
         p = QgsProject.instance()
+        ECU.setProjectVariable(p, M.VAR_MODULE, M.als_text(mods))
         ECU.setProjectVariable(p, VAR_AREA_LAYER, fl.id())
         ECU.setProjectVariable(p, VAR_AREA_KEY, key)
         ECU.setProjectVariable(p, VAR_AREA_LABEL, self.area_label.currentField() or '')
         ECU.setProjectVariable(p, VAR_OBS_LAYER, nl.id())
         ECU.setProjectVariable(p, VAR_OBS_FK, fk)
         ECU.setProjectVariable(p, B.VAR_SCHLUESSEL, self.biotop_key.currentData() or '')
-        if self.make_relation.isChecked() and not self.write_relation(fl, key, nl, fk):
+        if arten and self.make_relation.isChecked() and not self.write_relation(fl, key, nl, fk):
             return
-        if self.make_relation.isChecked():
+        if M.BIOTOPE in mods and self.make_relation.isChecked():
             self.write_biotop_relation(fl, key)
         p.setDirty(True)
         self.accept()
@@ -406,27 +489,32 @@ class GoKartDock(QDockWidget):
         row.addWidget(self.pick_btn)
         row.addWidget(self.setup_btn)
         layout.addLayout(row)
-        layout.addWidget(QLabel('Pflanzenart suchen / einsprechen'))
+        # --- Pflanzenarten (Modul "arten")
+        self.arten_box = QWidget()
+        ab = QVBoxLayout(self.arten_box)
+        ab.setContentsMargins(0, 0, 0, 0)
+        ab.addWidget(QLabel('Pflanzenart suchen / einsprechen'))
         row = QHBoxLayout()
         self.query = QLineEdit()
         self.query.setPlaceholderText('z. B. Grünlilie')
         self.mic = QPushButton('● Sprechen')  # Emoji fehlt in Ubuntu-Schriften
         row.addWidget(self.query)
         row.addWidget(self.mic)
-        layout.addLayout(row)
+        ab.addLayout(row)
         self.results = QListWidget()
         # GoKart: Fünf Vorschläge gleichzeitig anzeigen
         self.results.setMinimumHeight(135)
         self.results.setMinimumWidth(320)
-        layout.addWidget(self.results)
+        ab.addWidget(self.results)
         self.save_btn = QPushButton('Art speichern')
-        layout.addWidget(self.save_btn)
-        layout.addWidget(QLabel('Bereits erfasste Arten dieser Fläche'))
+        ab.addWidget(self.save_btn)
+        ab.addWidget(QLabel('Bereits erfasste Arten dieser Fläche'))
         self.existing = QListWidget()
-        layout.addWidget(self.existing)
+        ab.addWidget(self.existing)
         self.delete_btn = QPushButton('Markierte Art löschen')
         self.delete_btn.setEnabled(False)
-        layout.addWidget(self.delete_btn)
+        ab.addWidget(self.delete_btn)
+        layout.addWidget(self.arten_box)
         # --- Biotoptypen der aktiven Fläche (Schlüssel aus Projektvariable gokart_biotop_schluessel)
         self.biotop_box = QWidget()
         bb = QVBoxLayout(self.biotop_box)
@@ -812,7 +900,13 @@ class GoKartDock(QDockWidget):
         if len(self.matches) == 1:
             self.results.setCurrentRow(0)
 
+    @staticmethod
+    def module():
+        """Aktive Erfassungen laut Projektvariable gokart_module (fehlt sie: alle)."""
+        return M.lesen(project_var(M.VAR_MODULE))
+
     def refresh_existing(self):
+        self.arten_box.setVisible(M.ARTEN in self.module())
         self.existing.clear()
         layer = self.obs_layer()
         fid = self.area_id()
@@ -857,7 +951,7 @@ class GoKartDock(QDockWidget):
                                           'ebene': int(float(e)) if e else 0, 'bund_code': val(f, 'bund_code'),
                                           'ffh_lrt': val(f, 'ffh_lrt')})
         bereit = bool(self.biotop_typen) and self.biotop_layer(B.T_ZUORDNUNG) is not None
-        self.biotop_box.setVisible(bereit or bool(s) or kat is not None)
+        self.biotop_box.setVisible(M.BIOTOPE in self.module() and (bereit or bool(s) or kat is not None))
         if not s:
             self.biotop_titel.setText('Biotoptyp: Schlüssel unter „Einrichten…“ wählen')
         elif not self.biotop_typen:
@@ -1017,6 +1111,10 @@ class GoKartDock(QDockWidget):
         self.foto_list.clear()
         self.foto_list.blockSignals(False)
         self.foto_box.setVisible(False)
+        if M.FOTOS not in self.module():
+            self.foto_list.setVisible(False)
+            self.foto_info.setText('')
+            return
         flaeche = self.area_id()
         fotos = self.fotos_fuer(flaeche) if flaeche is not None else []
         self.foto_list.setVisible(bool(fotos))

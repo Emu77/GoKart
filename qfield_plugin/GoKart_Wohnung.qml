@@ -8,6 +8,8 @@
 // Version 0.4: Biotoptypen über einen dritten Knopf – Schlüssel (Bund/Land) aus der Projektvariablen
 //   gokart_biotop_schluessel, Katalog im Layer "biotoptypen", Erfassung im Layer "biotopzuordnung"
 //   (flaeche_id, schluessel, code, name, rolle Haupt/Neben, …). Tabellen/Layer legt biotope_einspielen.py an.
+// Version 0.5: Projektvariable gokart_module (z. B. "arten,biotope") legt fest, welche Knöpfe erscheinen –
+//   gesetzt im Desktop-Plugin unter "Einrichten… → Erfassen". Fehlt sie, erscheinen alle drei (ältere Projekte).
 // Getestet gegen die API von QField 4.x; QField 3.x wird über einen Fallback unterstützt.
 import QtQuick
 import QtQuick.Controls
@@ -45,6 +47,7 @@ Item {
     property var biotopTreffer: []
     property int biotopAuswahl: -1
     property var biotopeDerFlaeche: []   // [{ fid, schluessel, code, name, rolle }]
+    property var erfassung: ({ arten: true, fotos: true, biotope: true })   // aus gokart_module
 
     readonly property color gruen: '#167d50'
     readonly property color gruenHell: '#e6f6eb'
@@ -54,9 +57,14 @@ Item {
             meldung('GoKart: QField-API nicht gefunden – Plugin inaktiv.');
             return;
         }
-        iface.addItemToPluginsToolbar(gokartKnopf);
-        iface.addItemToPluginsToolbar(fotoKnopf);
-        iface.addItemToPluginsToolbar(biotopKnopf);
+        moduleLaden();
+        var knoepfe = [[erfassung.arten, gokartKnopf], [erfassung.fotos, fotoKnopf], [erfassung.biotope, biotopKnopf]];
+        for (var i = 0; i < knoepfe.length; i++) {
+            if (knoepfe[i][0]) iface.addItemToPluginsToolbar(knoepfe[i][1]);
+            else knoepfe[i][1].visible = false;     // nicht eingehängt -> nirgends sichtbar
+        }
+        if (!erfassung.arten && !erfassung.fotos && !erfassung.biotope)
+            meldung('GoKart: gokart_module enthält keine bekannte Erfassung (arten, fotos, biotope).');
     }
 
     // ---------------------------------------------------------------- Hilfsfunktionen
@@ -114,6 +122,15 @@ Item {
         return ebene(String(ref));
     }
 
+    // gokart_module: kommagetrennt (arten, fotos, biotope); leer/fehlend = alle
+    function moduleLaden() {
+        var roh = String(projektVariablen().gokart_module || '').toLowerCase().trim();
+        if (!roh || roh === 'null') { erfassung = { arten: true, fotos: true, biotope: true }; return; }
+        var teile = roh.split(/[,;]/).map(function (t) { return t.trim(); });
+        erfassung = { arten: teile.indexOf('arten') >= 0, fotos: teile.indexOf('fotos') >= 0,
+                   biotope: teile.indexOf('biotope') >= 0 };
+    }
+
     // Liest gokart_*-Variablen; ohne Variablen wird nach bekannten Layernamen gesucht.
     function konfigLaden() {
         var v = projektVariablen();
@@ -134,8 +151,8 @@ Item {
         cfg = c;
         protokoll('Konfiguration aus ' + c.quelle + ': Flächen=' + (c.flaechen ? c.flaechen.name : 'FEHLT') +
                   ' [' + c.key + '], Nachweise=' + (c.nachweise ? c.nachweise.name : 'FEHLT') + ' [' + c.fk + ']',
-                  !c.flaechen || !c.nachweise);
-        return !!(c.flaechen && c.nachweise);
+                  !c.flaechen || (erfassung.arten && !c.nachweise));
+        return !!(c.flaechen && (c.nachweise || !erfassung.arten));
     }
 
     function ebene(name) {

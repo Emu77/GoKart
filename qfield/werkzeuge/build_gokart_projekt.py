@@ -9,6 +9,9 @@ Aufruf (Ubuntu mit installiertem QGIS):
 Vorlage zur Weitergabe (ohne Flächen, Kartierer bringen eigene Shapes mit):
     python3 build_gokart_projekt.py --db … --ziel … --leer --crs EPSG:25832
 
+Was im Gelände erfasst wird (Knöpfe in QField; Projektvariable gokart_module, Standard: alles):
+    python3 build_gokart_projekt.py --db … --ziel … --module arten,biotope
+
 Ergebnis im Zielordner:
     gokart.gpkg   Flächen, Taxa, Suchnamen, eigene Synonyme, Artnachweise,
                   Biotoptypen-Kataloge (biotoptypen, biotop_schluessel) und Biotop-Zuordnungen
@@ -29,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gokart_namen import normalisieren, varianten  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
 import biotope as B  # noqa: E402
+import module as M  # noqa: E402
 
 from qgis.core import (  # noqa: E402
     QgsApplication, QgsCoordinateReferenceSystem, QgsDefaultValue, QgsEditFormConfig,
@@ -471,10 +475,18 @@ def main():
     ap.add_argument('--biotop-schluessel', metavar='SCHLÜSSEL',
                     help='geltender Biotoptypen-Schlüssel, z. B. SH, NI, BUND (Projektvariable gokart_biotop_schluessel)')
     ap.add_argument('--ohne-biotope', action='store_true', help='keine Biotoptypen-Kataloge einspielen')
+    ap.add_argument('--module', default=M.als_text(M.ALLE), metavar='LISTE',
+                    help='was in QField erfasst wird, kommagetrennt aus arten, fotos, biotope (Standard: %(default)s)')
     ap.add_argument('--neu', action='store_true', help='vorhandenes gokart.gpkg überschreiben (Erfassungen gehen verloren!)')
     a = ap.parse_args()
     if a.leer and a.flaechen:
         raise SystemExit('--leer und --flaechen schließen sich aus.')
+    try:
+        module = M.pruefen(a.module)
+    except ValueError as e:
+        raise SystemExit(str(e))
+    if M.BIOTOPE not in module:
+        a.ohne_biotope = True
     CRS = a.crs
     if not a.db.is_file():
         raise SystemExit(f'Datenbank nicht gefunden: {a.db}')
@@ -520,11 +532,15 @@ def main():
 
     # Fototabelle + Layer (wie abgleich.py)
     import abgleich as A
-    seite = A.Seite('Projekt', a.ziel / 'gokart.qgs')
-    if not seite.hat_fototabelle():
-        seite.fototabelle_anlegen()
-    if not seite.fotolayer_im_projekt():
-        seite.fotolayer_eintragen()
+    if M.FOTOS in module:
+        seite = A.Seite('Projekt', a.ziel / 'gokart.qgs')
+        if not seite.hat_fototabelle():
+            seite.fototabelle_anlegen()
+        if not seite.fotolayer_im_projekt():
+            seite.fotolayer_eintragen()
+
+    B.qgs_variable_setzen(a.ziel / 'gokart.qgs', M.VAR_MODULE, M.als_text(module))
+    print('Erfassung in QField: ' + ', '.join(M.NAMEN[m] for m in M.ALLE if m in module))
 
     # Aktuelles QField-Plugin (Biotope/Fotos) neben das Projekt legen
     ordner = a.plugin or A.PLUGIN_ORDNER

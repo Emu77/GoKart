@@ -46,6 +46,11 @@ Geplante Funktionen:
 - QField: dritter Knopf „Biotoptyp“ – Code oder Name tippen/diktieren (auch buchstabiert: „we em ypsilon“ → WMy)
 - GoKart Desktop: Bereich „Biotoptypen dieser Fläche“; `abgleich.py` gleicht Zuordnungen PC ↔ Tablet ab
 
+### Erfassungsmodule je Projekt
+- Projektvariable `gokart_module`, z. B. `arten,biotope` – fehlt sie, gilt alles (ältere Projekte)
+- Setzen: GoKart Desktop → Einrichten… → „Erfassen“ (Pflanzenarten / Standortfotos / Biotoptypen) oder `build_gokart_projekt.py --module arten,fotos,biotope`
+- QField zeigt nur die Knöpfe der gewählten Module; das Desktop-Dock blendet die übrigen Bereiche aus
+
 ### Datenhaltung
 - SQLite-Datenbank
 - JavaScript-Pflanzendaten

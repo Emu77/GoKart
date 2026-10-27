@@ -186,7 +186,9 @@ class Seite:
 
     def fotolayer_im_projekt(self):
         root = ET.parse(self.qgs).getroot()
-        return any(ml.findtext('id') == FOTO_LAYER_ID for ml in root.iter('maplayer'))
+        # Auch über den Namen: das Desktop-Plugin ("Einrichten… → Standortfotos") legt den Layer mit eigener ID an
+        return any(ml.findtext('id') == FOTO_LAYER_ID or ml.findtext('layername') == FOTO_TABELLE
+                   for ml in root.iter('maplayer'))
 
     def fotolayer_eintragen(self):
         """Trägt die Tabelle fotos als Layer ins Projekt ein, damit QField sie bearbeiten kann."""

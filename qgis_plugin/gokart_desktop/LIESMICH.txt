@@ -24,6 +24,8 @@ Einrichten (einmal je Projekt)
    „eigene_synonyme“ und „artnachweise“ übernehmen (Layernamen nicht ändern).
    Die Biotop-Layer lädt das Plugin beim Einrichten selbst.
 3. Menü Erweiterungen → GoKart → „GoKart: Projekt einrichten…“
+   - Erfassen: Pflanzenarten / Standortfotos / Biotoptypen anhaken – nur diese Knöpfe erscheinen
+     später in QField (Projektvariable gokart_module). Bei Fotos legt das Plugin die Tabelle „fotos“ an.
    - Flächen: eigener Flächenlayer + Schlüsselfeld (eindeutige ID) + Anzeigefeld
    - Artnachweise: Layer „artnachweise“, Verweis auf Fläche „flaeche_id“
    - Biotoptypen: „Kataloge einspielen / aktualisieren“, dann Schlüssel wählen (z. B. SH, NI)

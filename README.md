@@ -74,9 +74,13 @@ Geplante Funktionen:
 Detaillierte Anleitung zum QField-Plugin (PDF):
 [docs/GoKart_QField_Anleitung.pdf](docs/GoKart_QField_Anleitung.pdf)
 
-Inhalt: Voraussetzungen, Datenmodell, Projekt bauen/einrichten,
-Übertragung aufs Gerät, Arterfassung im Gelände, Standortfotos,
-Abgleich PC ↔ Tablet, Artenliste-Export, Fehlerbehebung.
+Inhalt: Voraussetzungen, Datenmodell, Projekt einrichten/bauen,
+Erfassungsmodule, Übertragung (QField Sync + `qfield_paket.py`),
+Arterfassung, Biotoptypen, Standortfotos, Abgleich PC ↔ Tablet,
+GoKart Desktop, Fehlerbehebung.
+
+Die PDF wird aus `docs/anleitung/anleitung_erstellen.py` erzeugt (ReportLab):
+`python3 docs/anleitung/anleitung_erstellen.py`
 
 ## Technologien
 

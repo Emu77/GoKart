@@ -17,6 +17,11 @@ Regeln:
   * Standortfotos: Tabelle "fotos" (flaeche_id, datei, kommentar, aufgenommen_am, lon, lat) neben den
     Artnachweisen, Bilddateien im Projektordner unter fotos/. Ein Foto ist eindeutig durch seinen Dateinamen.
     Fehlt die Tabelle, wird sie angelegt (und im Tablet-Projekt als Layer eingetragen).
+  * Bearbeitete Nachweise (QField-Plugin ab 0.6): Felder geaendert_am und ersetzt. Bei unterschiedlichem
+    geaendert_am gewinnt der neuere Stand (bemerkung, original_eingabe, ersetzt) – auch eine geleerte Bemerkung.
+    Wurde Art oder Fläche geändert, steht der alte Schlüssel in ersetzt ("Fläche:taxon_id", kommagetrennt);
+    der alte Eintrag wird dann auf beiden Seiten entfernt, wenn er dasselbe erfasst_am hat (also derselbe
+    Nachweis ist). Fehlen die Spalten, legt --ausfuehren sie auf beiden Seiten an.
   * Gelöschte Einträge kann das Skript nicht erkennen – sie kämen von der anderen Seite zurück.
     Dafür: --weglassen W-34:68005 (Fläche:taxon_id) bzw. --foto-weglassen fotos/<Datei>.jpg, mehrfach möglich.
   * Biotoptypen: Zuordnungen (Tabelle biotopzuordnung) sind eindeutig durch Fläche + Schlüssel + Code und werden
@@ -54,6 +59,8 @@ PLUGIN_ORDNER = Path(__file__).resolve().parents[2] / 'qfield_plugin'
 PLUGIN_QML = 'GoKart_Wohnung.qml'
 PLUGIN_DATEIEN = ('gokart_suche.js', 'gokart_biotop.js', 'gokart_icon.svg', 'gokart_foto.svg', 'gokart_biotop.svg')
 BIOTOP_FELDER = ('rolle', 'anteil', 'bemerkung')
+NACHWEIS_ZUSATZSPALTEN = (('geaendert_am', 'TEXT'), ('ersetzt', 'TEXT'))   # ab QField-Plugin 0.6
+NACHWEIS_FELDER = ('bemerkung', 'original_eingabe', 'ersetzt', 'geaendert_am')   # gehen bei "neuer gewinnt" mit
 
 
 class Seite:
@@ -92,6 +99,23 @@ class Seite:
         cols, pk, daten = self._lesen(self.an)
         self.an_cols, self.an_pk = cols, pk
         return {(str(d.get(self.fk)), str(d.get('taxon_id'))): d for d in daten}
+
+    def fehlende_nachweisspalten(self):
+        con = sqlite3.connect(self.an['datei'])
+        cols, _ = self._spalten(con, self.an['tabelle'])
+        con.close()
+        return [(n, t) for n, t in NACHWEIS_ZUSATZSPALTEN if n not in cols]
+
+    def nachweisspalten_ergaenzen(self):
+        fehlend = self.fehlende_nachweisspalten()
+        if fehlend:
+            con = sqlite3.connect(self.an['datei'])
+            for n, t in fehlend:
+                con.execute(f'ALTER TABLE "{self.an["tabelle"]}" ADD COLUMN "{n}" {t}')
+            con.commit()
+            con.close()
+        self.nachweise()                                   # Spaltenliste neu lesen
+        return fehlend
 
     def synonyme(self):
         if not self.es:
@@ -293,6 +317,48 @@ def plugin_pruefen(tb):
     return [z.name for q, z in plugin_ziele(tb) if not z.is_file() or not filecmp.cmp(q, z, shallow=False)]
 
 
+def nachweis_abgleich(a, b):
+    """Wie ergaenzungen(), aber mit geaendert_am: unterscheidet es sich, gewinnt der neuere Stand komplett
+    (NACHWEIS_FELDER, auch leere Werte). Sonst nur Bemerkung ergänzen bzw. Konflikt melden."""
+    fuer_a, fuer_b, konflikt = [], [], []
+    gleich_a, gleich_b = {}, {}
+    for k in a:
+        if k not in b:
+            continue
+        za, zb = str(a[k].get('geaendert_am') or ''), str(b[k].get('geaendert_am') or '')
+        if za == zb:
+            gleich_a[k], gleich_b[k] = a[k], b[k]
+            continue
+        gewinner, ziel = (a[k], fuer_b) if za > zb else (b[k], fuer_a)
+        verlierer = b[k] if za > zb else a[k]
+        for feld in NACHWEIS_FELDER:
+            if feld in gewinner and (gewinner.get(feld) or None) != (verlierer.get(feld) or None):
+                ziel.append((k, feld, gewinner.get(feld)))
+    fa, fb, ko = ergaenzungen(gleich_a, gleich_b, ('bemerkung',))
+    return fuer_a + fa, fuer_b + fb, konflikt + ko
+
+
+def ersetzte_nachweise(*seiten):
+    """Alte Schlüssel aus dem Feld ersetzt, deren Eintrag (gleiches erfasst_am) noch irgendwo liegt."""
+    alle = {}
+    for n in seiten:
+        for k, d in n.items():
+            alle.setdefault(k, []).append(d)
+    weg = {}
+    for n in seiten:
+        for k, d in n.items():
+            for alt in str(d.get('ersetzt') or '').split(','):
+                if ':' not in alt:
+                    continue
+                fl, tid = alt.strip().rsplit(':', 1)
+                ak = (fl, tid)
+                if ak == k or ak not in alle:
+                    continue
+                if any(str(x.get('erfasst_am') or '') == str(d.get('erfasst_am') or '') for x in alle[ak]):
+                    weg[ak] = k
+    return weg   # {alter Schlüssel: neuer Schlüssel}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('pc', help='PC-Projekt: .qgs oder Projektordner')
@@ -322,10 +388,13 @@ def main():
         # --- Artnachweise
         n_pc, n_tb = pc.nachweise(), tb.nachweise()
         weg = {tuple(w.split(':', 1)) for w in a.weglassen}
+        ersetzt = ersetzte_nachweise(n_pc, n_tb)
+        weg |= set(ersetzt)
+        spalten_pc, spalten_tb = pc.fehlende_nachweisspalten(), tb.fehlende_nachweisspalten()
         nur_pc = [k for k in n_pc if k not in n_tb and k not in weg]
         nur_tb = [k for k in n_tb if k not in n_pc and k not in weg]
         beide = [k for k in n_pc if k in n_tb]
-        upd_pc, upd_tb, konflikt = ergaenzungen(n_pc, n_tb, ('bemerkung',))
+        upd_pc, upd_tb, konflikt = nachweis_abgleich(n_pc, n_tb)
         weg_pc = [k for k in weg if k in n_pc]
         weg_tb = [k for k in weg if k in n_tb]
 
@@ -403,6 +472,11 @@ def main():
         for titel, upd in (('PC → Tablet', upd_tb + fupd_tb), ('Tablet → PC', upd_pc + fupd_pc)):
             for k, feld, wert in upd:
                 print(f'  ~ {feld} {titel}: {k}: {wert}')
+        for alt, neu in sorted(ersetzt.items()):
+            print(f'  ✎ in QField bearbeitet: {alt[0]}:{alt[1]} → {neu[0]}:{neu[1]} (alter Eintrag wird entfernt)')
+        if spalten_pc or spalten_tb:
+            print('Spalten für Bearbeitungen werden ergänzt: ' + ', '.join(
+                f'{s}: {", ".join(n for n, _ in sp)}' for s, sp in (('PC', spalten_pc), ('Tablet', spalten_tb)) if sp))
         if weg_pc or weg_tb or fweg_pc or fweg_tb:
             print(f'Wird entfernt: Nachweise {len(weg_pc)} PC / {len(weg_tb)} Tablet, '
                   f'Fotoeinträge {len(fweg_pc)} PC / {len(fweg_tb)} Tablet')
@@ -444,7 +518,7 @@ def main():
                       or fupd_pc or fupd_tb or fweg_pc or fweg_tb or datei_zum_pc or datei_zum_tb
                       or syn_nur_pc or syn_nur_tb or tabelle_pc or tabelle_tb or layer_tb or plugin_neu
                       or reg_pc or reg_tb or bnur_pc or bnur_tb or bupd_pc or bupd_tb or bweg_pc or bweg_tb
-                      or kat_neu or btab_pc or btab_tb or blayer_tb or var_neu)
+                      or kat_neu or btab_pc or btab_tb or blayer_tb or var_neu or spalten_pc or spalten_tb)
         if nichts:
             print('\n✓ Beide Stände sind gleich.')
             return
@@ -474,6 +548,7 @@ def main():
 
         def anwenden(seite, n_neu, n_upd, n_weg, f_neu, f_upd, f_weg, syn_neu, dateien, quelle_home, tabelle):
             seite.registrieren(seite.unregistriert())
+            seite.nachweisspalten_ergaenzen()
             if tabelle:
                 seite.fototabelle_anlegen()
             seite.fotos()                                          # Spaltenliste (neu) lesen

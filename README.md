@@ -35,6 +35,7 @@ Geplante Funktionen:
 - QField-Projekt-Plugin (QML): Fläche wählen → Name sprechen/tippen → max. 5 Vorschläge → speichern
 - Fehlertolerante Suche mit Kölner Phonetik (z. B. „kwerkus robur“ → *Quercus robur*)
 - Eigene Synonyme werden beim Erfassen gelernt
+- Artnachweise mobil bearbeiten (ab Plugin 0.6): „Bearbeiten“ bzw. „Letzte korrigieren“ – Art tauschen (Sprache/Suche), Fläche ändern, Bemerkung (auch per Diktat); `abgleich.py` überträgt Änderungen (Felder `geaendert_am`, `ersetzt`)
 - GeoPackage-Datenmodell: Flächen, Artnachweise, eigene Synonyme, Taxa, Suchnamen
 - Build-Skript (PyQGIS) erzeugt GeoPackage + QGIS-Projekt aus der SQLite-Datenbank und GermanSL
 

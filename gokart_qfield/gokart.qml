@@ -10,6 +10,11 @@
 //   (flaeche_id, schluessel, code, name, rolle Haupt/Neben, …). Tabellen/Layer legt biotope_einspielen.py an.
 // Version 0.5: Projektvariable gokart_module (z. B. "arten,biotope") legt fest, welche Knöpfe erscheinen –
 //   gesetzt im Desktop-Plugin unter "Einrichten… → Erfassen". Fehlt sie, erscheinen alle drei (ältere Projekte).
+// Version 0.6: Artnachweise mobil bearbeiten – Eintrag antippen bzw. "Bearbeiten" oder "Letzte Art korrigieren":
+//   Art tauschen (gleiche Suche/Spracheingabe wie beim Erfassen), Fläche ändern, Bemerkung (auch per Diktat).
+//   Gesetzt werden geaendert_am und – bei neuer Art oder Fläche – ersetzt (alte Schlüssel "Fläche:taxon_id",
+//   kommagetrennt), damit abgleich.py den alten Eintrag auf der anderen Seite entfernt statt ihn zurückzuholen.
+//   Fehlen die Felder (ältere Projekte), funktioniert das Bearbeiten trotzdem; abgleich.py legt sie an.
 // Getestet gegen die API von QField 4.x; QField 3.x wird über einen Fallback unterstützt.
 import QtQuick
 import QtQuick.Controls
@@ -32,7 +37,9 @@ Item {
     property int auswahlIndex: -1
     property var flaechen: []          // [{ id, name }]
     property string aktiveFlaeche: ''
-    property var artenDerFlaeche: []   // [{ fid, name, wiss, taxon_id }]
+    property var artenDerFlaeche: []   // [{ fid, name, wiss, taxon_id, am, bemerkung, eingabe, ersetzt, geaendert }]
+    property var bearbeitung: null     // Eintrag aus artenDerFlaeche, der gerade bearbeitet wird
+    property string bearbeitFlaeche: ''   // Zielfläche beim Bearbeiten
     property string letzteMeldung: ''
     property string diagnose: ''         // letzter Speicher-Ablauf, wird im Dialog angezeigt
     property bool diagnoseFehler: false
@@ -282,9 +289,11 @@ Item {
         var liste = [];
         if (an && aktiveFlaeche) {
             alleFeatures(an, '"' + cfg.fk + '" = ' + textSql(aktiveFlaeche), function (f) {
-                liste.push({ fid: f.id, taxon_id: attr(f, 'taxon_id'),
+                liste.push({ fid: f.id, taxon_id: attr(f, 'taxon_id'), flaeche: String(attr(f, cfg.fk) || ''),
                              name: attr(f, 'deutscher_name') || attr(f, 'wissenschaftlicher_name') || '?',
-                             wiss: attr(f, 'wissenschaftlicher_name') || '', am: attr(f, 'erfasst_am') || '' });
+                             wiss: attr(f, 'wissenschaftlicher_name') || '', am: attr(f, 'erfasst_am') || '',
+                             bemerkung: attr(f, 'bemerkung') || '', eingabe: attr(f, 'original_eingabe') || '',
+                             ersetzt: attr(f, 'ersetzt') || '', geaendert: attr(f, 'geaendert_am') || '' });
             });
             liste.sort(function (a, b) { return String(b.am).localeCompare(String(a.am)); });
         }
@@ -340,6 +349,7 @@ Item {
     function flaecheWaehlen(id, quelle) {
         if (!id) { meldung('Keine Fläche ' + quelle + ' gefunden.'); return; }
         aktiveFlaeche = String(id);
+        if (bearbeitung) bearbeitenBeenden();
         artenLaden();
         fotosLaden();
         biotopeLaden();
@@ -431,8 +441,121 @@ Item {
     function eintragLoeschen(fid) {
         var an = cfg.nachweise;
         if (!an) return;
+        if (bearbeitung && bearbeitung.fid === fid) bearbeitenBeenden();
         var ok = inBearbeitung(an, function () { return lu.deleteFeature(qgisProject, an, fid, false); });
         meldung(ok ? 'Eintrag gelöscht.' : 'Löschen fehlgeschlagen.');
+        artenLaden();
+    }
+
+    // ---------------------------------------------------------------- Artnachweis bearbeiten
+    function bearbeitenStarten(eintrag) {
+        if (!eintrag) { meldung('Auf dieser Fläche ist noch keine Art erfasst.'); return; }
+        bearbeitung = eintrag;
+        bearbeitFlaeche = eintrag.flaeche || aktiveFlaeche;
+        bemerkungFeld.text = eintrag.bemerkung || '';
+        sucheFeld.text = '';
+        treffer = [];
+        auswahlIndex = -1;
+        synonymMerken.checked = false;
+        sucheFeld.forceActiveFocus();
+    }
+
+    // Häufigster Fall im Gelände: die zuletzt erfasste Art war falsch erkannt
+    function letzteKorrigieren() {
+        var neueste = null;
+        for (var i = 0; i < artenDerFlaeche.length; i++) {
+            var a = artenDerFlaeche[i];
+            if (!neueste || String(a.am) > String(neueste.am)) neueste = a;
+        }
+        bearbeitenStarten(neueste);
+    }
+
+    function bearbeitenBeenden() {
+        bearbeitung = null;
+        bearbeitFlaeche = '';
+        bemerkungFeld.text = '';
+        sucheFeld.text = '';
+        treffer = [];
+        auswahlIndex = -1;
+        synonymMerken.checked = false;
+    }
+
+    // Was würde "Änderung speichern" tun? -> { art, flaeche, bemerkung, neueArt, neueFlaeche, neueBemerkung }
+    function geplanteAenderung() {
+        var b = bearbeitung;
+        if (!b) return null;
+        var r = ausgewaehlt();
+        var neueArt = !!(r && Number(r.id) !== Number(b.taxon_id));
+        var ziel = bearbeitFlaeche || b.flaeche;
+        var bem = String(bemerkungFeld.text).trim();
+        return { art: r, flaeche: ziel, bemerkung: bem, neueArt: neueArt,
+                 neueFlaeche: ziel !== b.flaeche, neueBemerkung: bem !== String(b.bemerkung || '').trim() };
+    }
+
+    function aenderungText() {
+        var g = geplanteAenderung();
+        if (!g) return '';
+        var teile = [];
+        if (g.neueArt) teile.push('Art → ' + (g.art.taxon.deutscher_name || g.art.taxon.wissenschaftlicher_name));
+        if (g.neueFlaeche) teile.push('Fläche → ' + flaechenName(g.flaeche));
+        if (g.neueBemerkung) teile.push(g.bemerkung ? 'Bemerkung' : 'Bemerkung leeren');
+        return teile.length ? 'Speichern: ' + teile.join(' · ') : 'Keine Änderung';
+    }
+
+    function aenderungSpeichern() {
+        var b = bearbeitung, g = geplanteAenderung();
+        var an = cfg.nachweise;
+        if (!b || !g || !an) return;
+        if (!g.neueArt && !g.neueFlaeche && !g.neueBemerkung) { meldung('Keine Änderung.'); return; }
+        offeneAenderungenSpeichern(an);
+
+        var tid = g.neueArt ? Number(g.art.id) : Number(b.taxon_id);
+        if (g.neueArt || g.neueFlaeche) {
+            var doppelt = 0;
+            alleFeatures(an, '"' + cfg.fk + '" = ' + textSql(g.flaeche) + ' AND "taxon_id" = ' + tid, function (f) {
+                if (f.id !== b.fid) doppelt++;
+            });
+            if (doppelt) {
+                var nm = g.neueArt ? (g.art.taxon.deutscher_name || g.art.taxon.wissenschaftlicher_name) : b.name;
+                meldung(nm + ' ist auf ' + flaechenName(g.flaeche) + ' bereits erfasst – dort ggf. den doppelten Eintrag löschen.');
+                return;
+            }
+        }
+
+        var eingabe = String(sucheFeld.text).trim();
+        var fehlend = [];
+        function aendern(feld, wert) {
+            var i = an.fields.indexFromName(feld);
+            if (i < 0) { fehlend.push(feld); return true; }   // Feld fehlt im Projekt -> überspringen
+            return an.changeAttributeValue(b.fid, i, wert);
+        }
+        var ok = inBearbeitung(an, function () {
+            var erfolg = true;
+            if (g.neueArt) {
+                erfolg = aendern('taxon_id', tid) && erfolg;
+                erfolg = aendern('wissenschaftlicher_name', g.art.taxon.wissenschaftlicher_name || null) && erfolg;
+                erfolg = aendern('deutscher_name', g.art.taxon.deutscher_name || null) && erfolg;
+                if (eingabe) erfolg = aendern('original_eingabe', eingabe) && erfolg;
+            }
+            if (g.neueFlaeche) erfolg = aendern(cfg.fk, g.flaeche) && erfolg;
+            if (g.neueArt || g.neueFlaeche) {
+                var alt = String(b.flaeche) + ':' + Number(b.taxon_id);
+                var liste = String(b.ersetzt || '').split(',').filter(function (x) { return x.trim() !== ''; });
+                if (liste.indexOf(alt) < 0) liste.push(alt);
+                erfolg = aendern('ersetzt', liste.join(',')) && erfolg;
+            }
+            if (g.neueBemerkung) erfolg = aendern('bemerkung', g.bemerkung === '' ? null : g.bemerkung) && erfolg;
+            erfolg = aendern('geaendert_am', jetzt()) && erfolg;
+            return erfolg;
+        });
+        if (!ok) { meldung('Änderung nicht gespeichert – Details unten im Dialog.'); artenLaden(); return; }
+
+        if (g.neueArt && synonymMerken.visible && synonymMerken.checked) synonymSpeichern(g.art.id, eingabe);
+        var text = '✔ geändert: ' + aenderungText().replace('Speichern: ', '');
+        if (fehlend.indexOf('ersetzt') >= 0 && (g.neueArt || g.neueFlaeche))
+            text += ' – Hinweis: Feld "ersetzt" fehlt, am PC abgleich.py laufen lassen, sonst kommt der alte Eintrag zurück.';
+        meldung(text);
+        bearbeitenBeenden();
         artenLaden();
     }
 
@@ -832,18 +955,78 @@ Item {
                 onToggled: plugin.flaechenLaden()
             }
 
+            // --- Bearbeitung eines vorhandenen Nachweises
+            Rectangle {
+                Layout.fillWidth: true
+                visible: plugin.bearbeitung !== null
+                implicitHeight: bearbeitSpalte.implicitHeight + 16
+                radius: 8
+                color: '#fff6e0'
+                border.color: '#d9a400'
+                ColumnLayout {
+                    id: bearbeitSpalte
+                    anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                    anchors.margins: 8
+                    spacing: 4
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label {
+                            Layout.fillWidth: true
+                            text: plugin.bearbeitung ? '✎ Bearbeiten: ' + plugin.bearbeitung.name : ''
+                            font.bold: true; elide: Text.ElideRight; color: '#1c2934'
+                        }
+                        Button { text: 'Abbrechen'; flat: true; onClicked: plugin.bearbeitenBeenden() }
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        visible: plugin.bearbeitung !== null
+                        text: plugin.bearbeitung ? '<i>' + plugin.bearbeitung.wiss + '</i> · erfasst ' +
+                              String(plugin.bearbeitung.am).replace('T', ' ').substring(0, 16) +
+                              (plugin.bearbeitung.eingabe ? ' · Eingabe „' + plugin.bearbeitung.eingabe + '“' : '') : ''
+                        textFormat: Text.StyledText; color: '#53645a'; font.pixelSize: 12; elide: Text.ElideRight
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label { text: 'Fläche'; color: '#1c2934' }
+                        ComboBox {
+                            id: bearbeitFlaecheAuswahl
+                            Layout.fillWidth: true
+                            model: plugin.flaechen.map(function (f) { return f.name ? f.name + ' (' + f.id + ')' : f.id; })
+                            currentIndex: {
+                                for (var i = 0; i < plugin.flaechen.length; i++) if (plugin.flaechen[i].id === plugin.bearbeitFlaeche) return i;
+                                return -1;
+                            }
+                            displayText: currentIndex < 0 ? (plugin.bearbeitFlaeche || 'Fläche wählen …') : currentText
+                            onActivated: function (i) { plugin.bearbeitFlaeche = plugin.flaechen[i].id; }
+                        }
+                    }
+                    TextField {
+                        id: bemerkungFeld
+                        objectName: 'gokartBemerkungFeld'
+                        Layout.fillWidth: true
+                        placeholderText: 'Bemerkung tippen oder Tastatur-Mikro (z. B. Deckung, blühend) …'
+                    }
+                }
+            }
+
             // --- Suche
-            Label { text: 'Pflanzenname'; font.bold: true }
+            Label { text: plugin.bearbeitung ? 'Neue Art (optional)' : 'Pflanzenname'; font.bold: true }
             TextField {
                 id: sucheFeld
                 objectName: 'gokartSucheFeld'
                 Layout.fillWidth: true
                 font.pixelSize: 20
-                placeholderText: plugin.laedt ? 'Pflanzendaten werden geladen …' : 'Tastatur-Mikro antippen oder tippen'
+                placeholderText: plugin.laedt ? 'Pflanzendaten werden geladen …'
+                                 : (plugin.bearbeitung ? 'Neue Art sprechen/tippen – leer lassen = Art bleibt'
+                                                       : 'Tastatur-Mikro antippen oder tippen')
                 enabled: !plugin.laedt
                 inputMethodHints: Qt.ImhNoAutoUppercase
                 onTextChanged: suchTimer.restart()
-                onAccepted: { suchTimer.stop(); plugin.suchen(text); if (plugin.ausgewaehlt()) plugin.speichern(); }
+                onAccepted: {
+                    suchTimer.stop(); plugin.suchen(text);
+                    if (plugin.bearbeitung) { if (plugin.ausgewaehlt()) plugin.aenderungSpeichern(); }
+                    else if (plugin.ausgewaehlt()) plugin.speichern();
+                }
             }
 
             BusyIndicator { running: plugin.laedt; visible: running; Layout.alignment: Qt.AlignHCenter }
@@ -899,6 +1082,7 @@ Item {
 
             Button {
                 Layout.fillWidth: true
+                visible: plugin.bearbeitung === null
                 text: plugin.ausgewaehlt()
                       ? 'Zu ' + (plugin.aktiveFlaeche ? plugin.flaechenName(plugin.aktiveFlaeche) : '?') + ' hinzufügen: ' + (plugin.ausgewaehlt().taxon.deutscher_name || plugin.ausgewaehlt().taxon.wissenschaftlicher_name)
                       : 'Art auswählen'
@@ -906,6 +1090,24 @@ Item {
                 highlighted: true
                 font.pixelSize: 17
                 onClicked: plugin.speichern()
+            }
+            Button {
+                id: aenderKnopf
+                objectName: 'gokartAenderKnopf'
+                Layout.fillWidth: true
+                visible: plugin.bearbeitung !== null
+                // bindet an Auswahl, Fläche und Bemerkung, damit der Text live mitläuft
+                text: { plugin.auswahlIndex; plugin.treffer; plugin.bearbeitFlaeche; bemerkungFeld.text; return plugin.aenderungText(); }
+                enabled: text !== 'Keine Änderung'
+                Layout.preferredHeight: 52
+                font.pixelSize: 16
+                // eigene Farben: unabhängig vom QField-Theme gut lesbar
+                contentItem: Label {
+                    text: aenderKnopf.text; font: aenderKnopf.font; color: 'white'; elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle { radius: 8; color: !aenderKnopf.enabled ? '#9fb5a8' : (aenderKnopf.down ? '#0f5c3a' : plugin.gruen) }
+                onClicked: plugin.aenderungSpeichern()
             }
 
             // --- Diagnose des letzten Speicherns (hilft bei der Fehlersuche im Gelände)
@@ -919,28 +1121,64 @@ Item {
             }
 
             // --- Bereits erfasste Arten der Fläche
-            Label {
-                text: plugin.aktiveFlaeche ? 'Erfasst auf ' + plugin.flaechenName(plugin.aktiveFlaeche) + ': ' + plugin.artenDerFlaeche.length + ' Arten' : 'Keine Fläche gewählt'
-                font.bold: true
+            RowLayout {
+                Layout.fillWidth: true
                 Layout.topMargin: 6
+                Label {
+                    Layout.fillWidth: true
+                    text: plugin.aktiveFlaeche ? 'Erfasst auf ' + plugin.flaechenName(plugin.aktiveFlaeche) + ': ' + plugin.artenDerFlaeche.length + ' Arten' : 'Keine Fläche gewählt'
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+                Button {
+                    text: 'Letzte korrigieren'
+                    flat: true
+                    visible: plugin.artenDerFlaeche.length > 0 && plugin.bearbeitung === null
+                    onClicked: plugin.letzteKorrigieren()
+                }
             }
             ListView {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
                 model: plugin.artenDerFlaeche
-                delegate: RowLayout {
+                delegate: Rectangle {
+                    id: artZeile
                     required property var modelData
+                    readonly property bool aktiv: plugin.bearbeitung !== null && plugin.bearbeitung.fid === modelData.fid
                     width: ListView.view.width
-                    Label { text: modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; color: '#1c2934' }
-                    Label { text: modelData.wiss; color: '#6a7a70'; font.italic: true; font.pixelSize: 12; Layout.maximumWidth: 180; elide: Text.ElideRight }
-                    Button {
-                        id: loeschKnopf
-                        property bool sicher: false
-                        text: sicher ? 'Sicher?' : 'Löschen'
-                        flat: true
-                        onClicked: { if (sicher) plugin.eintragLoeschen(modelData.fid); else { sicher = true; zurueck.start(); } }
-                        Timer { id: zurueck; interval: 3000; onTriggered: loeschKnopf.sicher = false }
+                    implicitHeight: artSpalte.implicitHeight + 4
+                    color: aktiv ? '#fff6e0' : 'transparent'
+                    radius: 6
+                    ColumnLayout {
+                        id: artSpalte
+                        anchors.left: parent.left; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        spacing: 0
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Label { text: artZeile.modelData.name; Layout.fillWidth: true; elide: Text.ElideRight; color: '#1c2934'; font.bold: artZeile.aktiv }
+                            Label { text: artZeile.modelData.wiss; color: '#6a7a70'; font.italic: true; font.pixelSize: 12; Layout.maximumWidth: 150; elide: Text.ElideRight }
+                            Button {
+                                text: 'Bearbeiten'
+                                flat: true
+                                visible: !artZeile.aktiv
+                                onClicked: plugin.bearbeitenStarten(artZeile.modelData)
+                            }
+                            Button {
+                                id: loeschKnopf
+                                property bool sicher: false
+                                text: sicher ? 'Sicher?' : 'Löschen'
+                                flat: true
+                                onClicked: { if (sicher) plugin.eintragLoeschen(artZeile.modelData.fid); else { sicher = true; zurueck.start(); } }
+                                Timer { id: zurueck; interval: 3000; onTriggered: loeschKnopf.sicher = false }
+                            }
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: artZeile.modelData.bemerkung !== ''
+                            text: '💬 ' + artZeile.modelData.bemerkung
+                            color: '#53645a'; font.pixelSize: 12; elide: Text.ElideRight
+                        }
                     }
                 }
             }

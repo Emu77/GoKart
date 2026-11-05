@@ -15,12 +15,15 @@ Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen od
 | `test/qml_harness.py` | Simuliert QField und spielt den kompletten Ablauf mit dem Plugin durch |
 | `werkzeuge/biotope_einspielen.py` | Biotoptypen-Kataloge (Bund/Länder) in ein Projekt einspielen, Schlüssel setzen |
 | `werkzeuge/biotope_katalog_import.py` | Katalog-CSV aus Original-PDF/Excel erzeugen oder ergänzen |
+| `test/qml_harness_bearbeiten.py` | Bearbeiten von Artnachweisen (QField-Simulation, eigenes Mini-Projekt) |
 | `test/test_biotop.js`, `test/qml_harness_biotope.py` | Biotop-Suche (Node) und Biotop-Dialog (QField-Simulation) |
 
 ## Datenmodell (`gokart.gpkg`, EPSG:25833)
 
 - `flaechen` (Polygon): `flaeche_id` (eindeutig), `name`, `bemerkung` – 3 Testflächen im Tiergarten
-- `artnachweise`: `flaeche_id`, `taxon_id`, Namen, `original_eingabe`, `erfasst_am`, `bemerkung`
+- `artnachweise`: `flaeche_id`, `taxon_id`, Namen, `original_eingabe`, `erfasst_am`, `bemerkung`, `geaendert_am`, `ersetzt`
+  (`ersetzt` = alte Schlüssel `Fläche:taxon_id` nach Art-/Flächenwechsel in QField; ältere Projekte bekommen die
+  beiden Spalten beim nächsten `abgleich.py --ausfuehren`)
 - `eigene_synonyme`: `taxon_id`, `synonym`, `schluessel` (entsteht beim Erfassen)
 - `taxon` (6.101) und `suchnamen` (15.649): Referenz, schreibgeschützt
 - Relation: Fläche 1:n Artnachweise → im Flächenformular gibt es den Reiter „Arten“
@@ -35,7 +38,10 @@ Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen od
 3. Den grünen Blatt-Knopf in der Plugin-Leiste antippen.
 4. Fläche wählen: Liste, **📍 GPS** (Position liegt in der Fläche) oder **⌖ Karte** (Kartenmitte – praktisch im Emulator).
 5. Ins Namensfeld tippen und das **Mikrofon der Tastatur** nutzen. Bei genau einem eindeutigen Treffer ist dieser schon ausgewählt, dann reicht **Enter**.
-6. Wenn die Eingabe kein bekannter Name war (z. B. „Stil Eiche“), kannst du sie per Häkchen als **eigenes Synonym** speichern. Danach wird sie exakt erkannt.
+6. **Korrigieren:** In der Liste „Erfasst auf …“ bei einem Eintrag **Bearbeiten** antippen (oder **Letzte korrigieren**
+   für die zuletzt erfasste Art). Neue Art sprechen/tippen (leer lassen = Art bleibt), Fläche ändern, Bemerkung
+   ergänzen → grüner Knopf „Speichern: …“. Doppelte Art auf einer Fläche wird abgewiesen.
+7. Wenn die Eingabe kein bekannter Name war (z. B. „Stil Eiche“), kannst du sie per Häkchen als **eigenes Synonym** speichern. Danach wird sie exakt erkannt.
 
 **Spracheingabe offline:** Die Tastatur muss offline diktieren können, z. B. mit FUTO Keyboard (FUTO Voice Input) oder Gboard mit heruntergeladenem Offline-Sprachpaket Deutsch. Das Plugin selbst braucht keine Internetverbindung, nur die OSM-Hintergrundkarte.
 

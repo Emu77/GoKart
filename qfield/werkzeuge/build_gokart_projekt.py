@@ -316,13 +316,14 @@ def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None, zusatztax
         feld('flaeche_id', QVariant.String, 20), feld('taxon_id', QVariant.Int),
         feld('wissenschaftlicher_name', QVariant.String), feld('deutscher_name', QVariant.String),
         feld('original_eingabe', QVariant.String), feld('erfasst_am', QVariant.String),
-        feld('bemerkung', QVariant.String, 500)])
+        feld('bemerkung', QVariant.String, 500),
+        feld('geaendert_am', QVariant.String), feld('ersetzt', QVariant.String)])   # Bearbeiten in QField (0.6)
     af = []
     tx_map = {t[0]: t for t in taxa}
     for flid, tid, am, bem, orig in erfasst:
         t = tx_map.get(tid)
         f = QgsFeature(an.fields())
-        f.setAttributes([flid, tid, t[1] if t else None, t[2] if t else None, orig, am, bem])
+        f.setAttributes([flid, tid, t[1] if t else None, t[2] if t else None, orig, am, bem, None, None])
         af.append(f)
     an.dataProvider().addFeatures(af)
     schreiben(an, gpkg, False)
@@ -401,7 +402,7 @@ def projekt_erzeugen(ziel, gpkg):
     # Artnachweise-Formular
     value_relation(an, 'flaeche_id', fl, 'flaeche_id', 'flaeche_id')
     value_relation(an, 'taxon_id', tx, 'taxon_id', 'anzeige_name')
-    ausblenden(an, 'fid')
+    ausblenden(an, 'fid', 'ersetzt')
     an.setDefaultValueDefinition(an.fields().indexFromName('erfasst_am'),
                                  QgsDefaultValue("format_date(now(), 'yyyy-MM-ddTHH:mm:ss')"))
     # Namen automatisch aus der Taxon-Tabelle übernehmen, falls im Formular erfasst

@@ -155,6 +155,12 @@ class Seite:
         self.fk = var.get('gokart_nachweis_fk') or 'flaeche_id'
         if not self.an:
             raise SystemExit(f'{name}: Layer mit Artnachweisen nicht gefunden ({self.datei.original})')
+        if not self.an.get('tabelle'):
+            raise SystemExit(f'{name}: Tabelle des Artnachweis-Layers nicht erkennbar ({self.an["datei"]})')
+        if self.es and not self.es.get('tabelle'):
+            print(f'⚠ {name}: Tabelle des Layers „{self.es["name"]}“ nicht erkennbar ({self.es["datei"]}) – '
+                  'eigene Synonyme werden auf dieser Seite übersprungen.')
+            self.es = None
         # Fotos und Biotoptypen liegen in derselben GeoPackage wie die Artnachweise
         self.fo = {'datei': self.an['datei'], 'tabelle': FOTO_TABELLE, 'name': FOTO_TABELLE}
         self.bz = {'datei': self.an['datei'], 'tabelle': B.T_ZUORDNUNG, 'name': B.T_ZUORDNUNG}

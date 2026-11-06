@@ -44,6 +44,26 @@ def projekt_finden(pfad, tmp):
     raise SystemExit(f'Nicht gefunden oder kein Projekt: {pfad}')
 
 
+def tabelle_raten(gpkg, layername):
+    """Datenquelle ohne |layername=… (z. B. GeoPackage mit nur einer Tabelle oder |layerid=…):
+    Tabelle gleichen Namens wie der Layer, sonst die einzige Tabelle der Datei. Sonst None."""
+    try:
+        con = sqlite3.connect(f'file:{gpkg}?mode=ro', uri=True)
+        try:
+            namen = [r[0] for r in con.execute('SELECT table_name FROM gpkg_contents')]
+        except sqlite3.Error:
+            namen = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                                               "AND name NOT LIKE 'gpkg_%' AND name NOT LIKE 'sqlite_%' "
+                                               "AND name NOT LIKE 'rtree_%'")]
+        con.close()
+    except sqlite3.Error:
+        return None
+    for n in namen:
+        if layername and n.lower() == str(layername).lower():
+            return n
+    return namen[0] if len(namen) == 1 else None
+
+
 def projekt_lesen(qgs):
     root = ET.parse(qgs).getroot()
     layer = {}
@@ -53,7 +73,10 @@ def projekt_lesen(qgs):
             continue
         datei, _, rest = src.partition('|')
         tabelle = next((t.split('=', 1)[1] for t in rest.split('|') if t.startswith('layername=')), None)
-        layer[lid] = {'datei': (qgs.parent / datei).resolve(), 'tabelle': tabelle, 'name': name}
+        pfad = (qgs.parent / datei).resolve()
+        if not tabelle:
+            tabelle = tabelle_raten(pfad, name)
+        layer[lid] = {'datei': pfad, 'tabelle': tabelle, 'name': name}
     var = {}
     v = root.find('.//properties/Variables')
     if v is not None:

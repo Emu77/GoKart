@@ -5,6 +5,8 @@ Aufruf:
     python3 abgleich.py <PC-Projekt (.qgs oder Ordner)> <Tablet-Export (.zip oder Ordner)>
         → zeigt nur die Unterschiede, ändert nichts
     python3 abgleich.py <PC> <Tablet> --ausfuehren
+    python3 abgleich.py qfield_projekt tablet.zip --pc-projekt GoKart_Wohnung.qgz
+        → bei mehreren Projekten im Ordner das richtige wählen (.qgs und .qgz gehen beide)
         → ergänzt fehlende Einträge auf BEIDEN Seiten:
           * PC-Projekt wird direkt aktualisiert (vorher Sicherung *.bak)
           * fürs Tablet entsteht ein neues Zip <Tablet>_abgleich_<Datum>.zip (Original bleibt unberührt)
@@ -46,7 +48,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
 import biotope as B  # noqa: E402
-from artenliste_export import layer_suchen, projekt_finden, projekt_lesen  # noqa: E402
+from artenliste_export import layer_suchen, projekt_lesen  # noqa: E402
 
 INTERNE_IDS = {'fid', 'fid_1', 'ogc_fid'}   # werden nie übertragen, jede Datei vergibt eigene
 FOTO_TABELLE = 'fotos'
@@ -63,17 +65,96 @@ NACHWEIS_ZUSATZSPALTEN = (('geaendert_am', 'TEXT'), ('ersetzt', 'TEXT'))   # ab 
 NACHWEIS_FELDER = ('bemerkung', 'original_eingabe', 'ersetzt', 'geaendert_am')   # gehen bei "neuer gewinnt" mit
 
 
+TEMP_PRAEFIX = '.gokart_abgleich_'   # entpackte .qgs aus einer .qgz (liegt kurz neben der .qgz)
+
+
+def projekt_waehlen(pfad, tmp, name=None, rolle='PC'):
+    """Projektdatei (.qgs oder .qgz) aus Datei, Ordner oder Zip bestimmen."""
+    pfad = Path(pfad).expanduser().resolve()
+    if pfad.suffix.lower() == '.zip':
+        with zipfile.ZipFile(pfad) as z:
+            z.extractall(tmp)
+        pfad = Path(tmp)
+    if pfad.is_file():
+        if pfad.suffix.lower() not in ('.qgs', '.qgz'):
+            raise SystemExit(f'{rolle}: keine Projektdatei: {pfad}')
+        return pfad
+    if not pfad.is_dir():
+        raise SystemExit(f'{rolle}: nicht gefunden: {pfad}')
+    kand = sorted(p for p in pfad.rglob('*') if p.is_file() and p.suffix.lower() in ('.qgs', '.qgz')
+                  and not p.name.startswith(TEMP_PRAEFIX) and '.bak' not in p.name)
+    if name:
+        treffer = [p for p in kand if p.name == name]
+        if not treffer:
+            raise SystemExit(f'{rolle}: {name} nicht gefunden. Vorhanden: ' + ', '.join(p.name for p in kand))
+        return treffer[0]
+    if not kand:
+        raise SystemExit(f'{rolle}: keine .qgs/.qgz in {pfad}')
+    if len(kand) > 1:
+        qf = [p for p in kand if p.stem.endswith('_qfield')]   # QField-Sync-Exporte
+        if len(qf) == 1:
+            return qf[0]
+        opt = '--pc-projekt' if rolle == 'PC' else '--tablet-projekt'
+        raise SystemExit(f'{rolle}: mehrere Projekte in {pfad}: ' + ', '.join(p.name for p in kand) +
+                         f'\nBitte mit {opt} <Dateiname> wählen.')
+    return kand[0]
+
+
+class Projektdatei:
+    """.qgs direkt; .qgz wird für die Dauer des Abgleichs als .qgs daneben entpackt und danach zurückgeschrieben."""
+    def __init__(self, pfad):
+        self.original = pfad
+        self.qgz = pfad.suffix.lower() == '.qgz'
+        if not self.qgz:
+            self.qgs = pfad
+            return
+        with zipfile.ZipFile(pfad) as z:
+            namen = [n for n in z.namelist() if n.lower().endswith('.qgs')]
+            if not namen:
+                raise SystemExit(f'{pfad.name}: keine .qgs in der .qgz')
+            self.innen = namen[0]
+            self.inhalt = z.read(self.innen)
+        self.qgs = pfad.with_name(TEMP_PRAEFIX + pfad.stem + '.qgs')
+        self.qgs.write_bytes(self.inhalt)
+
+    @property
+    def stamm(self):
+        return self.original.stem
+
+    def geaendert(self):
+        return self.qgz and self.qgs.is_file() and self.qgs.read_bytes() != self.inhalt
+
+    def zurueckschreiben(self):
+        """Geänderte .qgs zurück in die .qgz (alle anderen Einträge bleiben), Temp-Datei entfernen."""
+        if not self.qgz:
+            return
+        if self.geaendert():
+            neu = self.original.with_name(self.original.name + '.neu')
+            with zipfile.ZipFile(self.original) as alt, zipfile.ZipFile(neu, 'w', zipfile.ZIP_DEFLATED) as z:
+                for info in alt.infolist():
+                    daten = self.qgs.read_bytes() if info.filename == self.innen else alt.read(info.filename)
+                    z.writestr(info, daten)
+            neu.replace(self.original)
+            self.inhalt = self.qgs.read_bytes()
+        self.aufraeumen()
+
+    def aufraeumen(self):
+        if self.qgz and self.qgs.is_file():
+            self.qgs.unlink()
+
+
 class Seite:
     """Eine Projektseite (PC oder Tablet) mit Zugriff auf Artnachweise, Fotos und eigene Synonyme."""
 
-    def __init__(self, name, qgs):
-        self.name, self.qgs = name, qgs
-        layer, var = projekt_lesen(qgs)
+    def __init__(self, name, datei):
+        self.datei = Projektdatei(datei)
+        self.name, self.qgs = name, self.datei.qgs
+        layer, var = projekt_lesen(self.qgs)
         self.an = layer_suchen(layer, var.get('gokart_nachweis_layer'), 'artnachweise')
         self.es = layer_suchen(layer, None, 'eigene_synonyme')
         self.fk = var.get('gokart_nachweis_fk') or 'flaeche_id'
         if not self.an:
-            raise SystemExit(f'{name}: Layer mit Artnachweisen nicht gefunden ({qgs})')
+            raise SystemExit(f'{name}: Layer mit Artnachweisen nicht gefunden ({self.datei.original})')
         # Fotos und Biotoptypen liegen in derselben GeoPackage wie die Artnachweise
         self.fo = {'datei': self.an['datei'], 'tabelle': FOTO_TABELLE, 'name': FOTO_TABELLE}
         self.bz = {'datei': self.an['datei'], 'tabelle': B.T_ZUORDNUNG, 'name': B.T_ZUORDNUNG}
@@ -308,7 +389,7 @@ def plugin_ziele(tb):
     """[(Quelle, Ziel)] – das Plugin muss so heißen wie die .qgs des Tablet-Projekts."""
     if not (PLUGIN_ORDNER / PLUGIN_QML).is_file():
         return []
-    paare = [(PLUGIN_ORDNER / PLUGIN_QML, tb.home / (tb.qgs.stem + '.qml'))]
+    paare = [(PLUGIN_ORDNER / PLUGIN_QML, tb.home / (tb.datei.stamm + '.qml'))]
     paare += [(PLUGIN_ORDNER / n, tb.home / n) for n in PLUGIN_DATEIEN if (PLUGIN_ORDNER / n).is_file()]
     return paare
 
@@ -370,6 +451,8 @@ def main():
                     help='Fotoeintrag auf beiden Seiten entfernen (Bilddatei bleibt liegen)')
     ap.add_argument('--biotop-weglassen', action='append', default=[], metavar='FLÄCHE:SCHLÜSSEL:CODE',
                     help='Biotop-Zuordnung auf beiden Seiten entfernen')
+    ap.add_argument('--pc-projekt', metavar='DATEI', help='Projektdatei im PC-Ordner (bei mehreren .qgs/.qgz)')
+    ap.add_argument('--tablet-projekt', metavar='DATEI', help='Projektdatei im Tablet-Export (bei mehreren)')
     ap.add_argument('--ohne-plugin', action='store_true', help='QField-Plugin im Tablet-Zip nicht aktualisieren')
     a = ap.parse_args()
 
@@ -377,229 +460,246 @@ def main():
     if Path(a.pc).suffix.lower() == '.zip':
         raise SystemExit('Das PC-Projekt muss ein Ordner oder eine .qgs sein (kein Zip).')
     with tempfile.TemporaryDirectory() as tmp:
-        pc = Seite('PC', projekt_finden(a.pc, None))
+        pc_datei = projekt_waehlen(a.pc, None, a.pc_projekt, 'PC')
         # Tablet-Stand immer in einer Arbeitskopie bearbeiten, das Original bleibt unberührt
         if tablet_pfad.is_dir():
             shutil.copytree(tablet_pfad, Path(tmp) / 'tablet')
-            tb = Seite('Tablet', projekt_finden(Path(tmp) / 'tablet', None))
+            tb_datei = projekt_waehlen(Path(tmp) / 'tablet', None, a.tablet_projekt, 'Tablet')
+        elif tablet_pfad.suffix.lower() == '.zip':
+            tb_datei = projekt_waehlen(tablet_pfad, Path(tmp) / 'tablet', a.tablet_projekt, 'Tablet')
         else:
-            tb = Seite('Tablet', projekt_finden(tablet_pfad, tmp))
+            raise SystemExit('Tablet: Ordner oder .zip angeben')
+        pc = Seite('PC', pc_datei)
+        try:
+            tb = Seite('Tablet', tb_datei)
+        except BaseException:
+            pc.datei.aufraeumen()
+            raise
+        try:
+            abgleichen(a, pc, tb, tablet_pfad)
+        finally:
+            pc.datei.aufraeumen()
+            tb.datei.aufraeumen()
 
-        # --- Artnachweise
-        n_pc, n_tb = pc.nachweise(), tb.nachweise()
-        weg = {tuple(w.split(':', 1)) for w in a.weglassen}
-        ersetzt = ersetzte_nachweise(n_pc, n_tb)
-        weg |= set(ersetzt)
-        spalten_pc, spalten_tb = pc.fehlende_nachweisspalten(), tb.fehlende_nachweisspalten()
-        nur_pc = [k for k in n_pc if k not in n_tb and k not in weg]
-        nur_tb = [k for k in n_tb if k not in n_pc and k not in weg]
-        beide = [k for k in n_pc if k in n_tb]
-        upd_pc, upd_tb, konflikt = nachweis_abgleich(n_pc, n_tb)
-        weg_pc = [k for k in weg if k in n_pc]
-        weg_tb = [k for k in weg if k in n_tb]
 
-        # --- Fotos (Tabelle + Dateien)
-        f_pc, f_tb = pc.fotos(), tb.fotos()
-        foto_weg = set(a.foto_weglassen)
-        fnur_pc = [k for k in f_pc if k not in f_tb and k not in foto_weg]
-        fnur_tb = [k for k in f_tb if k not in f_pc and k not in foto_weg]
-        fupd_pc, fupd_tb, fkonflikt = ergaenzungen(f_pc, f_tb, ('kommentar',))
-        fweg_pc = [k for k in foto_weg if k in f_pc]
-        fweg_tb = [k for k in foto_weg if k in f_tb]
-        alle_dateien = {k for k in set(f_pc) | set(f_tb) if k not in foto_weg}
-        datei_zum_pc = sorted(f for f in alle_dateien if (tb.home / f).is_file() and not (pc.home / f).is_file())
-        datei_zum_tb = sorted(f for f in alle_dateien if (pc.home / f).is_file() and not (tb.home / f).is_file())
-        fehlt_ganz = sorted(f for f in alle_dateien if not (pc.home / f).is_file() and not (tb.home / f).is_file())
-        tabelle_pc, tabelle_tb = not pc.hat_fototabelle(), not tb.hat_fototabelle()
-        reg_pc, reg_tb = pc.unregistriert(), tb.unregistriert()
-        layer_tb = not tb.fotolayer_im_projekt()
+def abgleichen(a, pc, tb, tablet_pfad):
+    # --- Artnachweise
+    n_pc, n_tb = pc.nachweise(), tb.nachweise()
+    weg = {tuple(w.split(':', 1)) for w in a.weglassen}
+    ersetzt = ersetzte_nachweise(n_pc, n_tb)
+    weg |= set(ersetzt)
+    spalten_pc, spalten_tb = pc.fehlende_nachweisspalten(), tb.fehlende_nachweisspalten()
+    nur_pc = [k for k in n_pc if k not in n_tb and k not in weg]
+    nur_tb = [k for k in n_tb if k not in n_pc and k not in weg]
+    beide = [k for k in n_pc if k in n_tb]
+    upd_pc, upd_tb, konflikt = nachweis_abgleich(n_pc, n_tb)
+    weg_pc = [k for k in weg if k in n_pc]
+    weg_tb = [k for k in weg if k in n_tb]
 
-        # --- Eigene Synonyme
-        s_pc, s_tb = pc.synonyme(), tb.synonyme()
-        syn_nur_pc = [k for k in s_pc if k not in s_tb]
-        syn_nur_tb = [k for k in s_tb if k not in s_pc]
+    # --- Fotos (Tabelle + Dateien)
+    f_pc, f_tb = pc.fotos(), tb.fotos()
+    foto_weg = set(a.foto_weglassen)
+    fnur_pc = [k for k in f_pc if k not in f_tb and k not in foto_weg]
+    fnur_tb = [k for k in f_tb if k not in f_pc and k not in foto_weg]
+    fupd_pc, fupd_tb, fkonflikt = ergaenzungen(f_pc, f_tb, ('kommentar',))
+    fweg_pc = [k for k in foto_weg if k in f_pc]
+    fweg_tb = [k for k in foto_weg if k in f_tb]
+    alle_dateien = {k for k in set(f_pc) | set(f_tb) if k not in foto_weg}
+    datei_zum_pc = sorted(f for f in alle_dateien if (tb.home / f).is_file() and not (pc.home / f).is_file())
+    datei_zum_tb = sorted(f for f in alle_dateien if (pc.home / f).is_file() and not (tb.home / f).is_file())
+    fehlt_ganz = sorted(f for f in alle_dateien if not (pc.home / f).is_file() and not (tb.home / f).is_file())
+    tabelle_pc, tabelle_tb = not pc.hat_fototabelle(), not tb.hat_fototabelle()
+    reg_pc, reg_tb = pc.unregistriert(), tb.unregistriert()
+    layer_tb = not tb.fotolayer_im_projekt()
 
-        # --- Biotoptypen (Zuordnungen vereinigen, Katalog + Variable vom PC)
-        b_pc, b_tb = pc.biotope(), tb.biotope()
-        bweg = {tuple(w.split(':', 2)) for w in a.biotop_weglassen}
-        bnur_pc = [k for k in b_pc if k not in b_tb and k not in bweg]
-        bnur_tb = [k for k in b_tb if k not in b_pc and k not in bweg]
-        bupd_pc, bupd_tb, bkonflikt = ergaenzungen(b_pc, b_tb, BIOTOP_FELDER)
-        bweg_pc = [k for k in bweg if k in b_pc]
-        bweg_tb = [k for k in bweg if k in b_tb]
-        kat_pc, kat_tb = pc.katalog(), tb.katalog()
-        kat_neu = bool(kat_pc) and any(kat_tb.get(s) != n for s, n in kat_pc.items())
-        biotop_pc = bool(kat_pc) or pc.hat_tabelle(B.T_ZUORDNUNG)
-        btab_pc = tb.hat_tabelle(B.T_ZUORDNUNG) and not pc.hat_tabelle(B.T_ZUORDNUNG)
-        btab_tb = biotop_pc and not tb.hat_tabelle(B.T_ZUORDNUNG)
-        blayer_tb = biotop_pc and not set(B.LAYER_IDS.values()) <= B.qgs_layer_ids(tb.qgs)
-        var_pc, var_tb = B.qgs_variable(pc.qgs, B.VAR_SCHLUESSEL), B.qgs_variable(tb.qgs, B.VAR_SCHLUESSEL)
-        var_neu = bool(var_pc) and var_pc != var_tb
-        # Zwei verschiedene Hauptbiotope für dieselbe Fläche und denselben Schlüssel nach dem Abgleich?
-        haupt = {}
-        for k, d in list(b_pc.items()) + list(b_tb.items()):
-            if k not in bweg and (d.get('rolle') or '') == 'Haupt':
-                haupt.setdefault(k[:2], set()).add(k[2])
-        haupt_doppelt = {k: v for k, v in haupt.items() if len(v) > 1}
+    # --- Eigene Synonyme
+    s_pc, s_tb = pc.synonyme(), tb.synonyme()
+    syn_nur_pc = [k for k in s_pc if k not in s_tb]
+    syn_nur_tb = [k for k in s_tb if k not in s_pc]
 
-        plugin_neu = [] if a.ohne_plugin else plugin_pruefen(tb)
+    # --- Biotoptypen (Zuordnungen vereinigen, Katalog + Variable vom PC)
+    b_pc, b_tb = pc.biotope(), tb.biotope()
+    bweg = {tuple(w.split(':', 2)) for w in a.biotop_weglassen}
+    bnur_pc = [k for k in b_pc if k not in b_tb and k not in bweg]
+    bnur_tb = [k for k in b_tb if k not in b_pc and k not in bweg]
+    bupd_pc, bupd_tb, bkonflikt = ergaenzungen(b_pc, b_tb, BIOTOP_FELDER)
+    bweg_pc = [k for k in bweg if k in b_pc]
+    bweg_tb = [k for k in bweg if k in b_tb]
+    kat_pc, kat_tb = pc.katalog(), tb.katalog()
+    kat_neu = bool(kat_pc) and any(kat_tb.get(s) != n for s, n in kat_pc.items())
+    biotop_pc = bool(kat_pc) or pc.hat_tabelle(B.T_ZUORDNUNG)
+    btab_pc = tb.hat_tabelle(B.T_ZUORDNUNG) and not pc.hat_tabelle(B.T_ZUORDNUNG)
+    btab_tb = biotop_pc and not tb.hat_tabelle(B.T_ZUORDNUNG)
+    blayer_tb = biotop_pc and not set(B.LAYER_IDS.values()) <= B.qgs_layer_ids(tb.qgs)
+    var_pc, var_tb = B.qgs_variable(pc.qgs, B.VAR_SCHLUESSEL), B.qgs_variable(tb.qgs, B.VAR_SCHLUESSEL)
+    var_neu = bool(var_pc) and var_pc != var_tb
+    # Zwei verschiedene Hauptbiotope für dieselbe Fläche und denselben Schlüssel nach dem Abgleich?
+    haupt = {}
+    for k, d in list(b_pc.items()) + list(b_tb.items()):
+        if k not in bweg and (d.get('rolle') or '') == 'Haupt':
+            haupt.setdefault(k[:2], set()).add(k[2])
+    haupt_doppelt = {k: v for k, v in haupt.items() if len(v) > 1}
 
-        # --- Bericht
-        print(f'PC:     {len(n_pc)} Nachweise, {len(f_pc)} Fotos, {len(b_pc)} Biotope, {len(s_pc)} eigene Synonyme  ({pc.qgs})')
-        print(f'Tablet: {len(n_tb)} Nachweise, {len(f_tb)} Fotos, {len(b_tb)} Biotope, {len(s_tb)} eigene Synonyme  ({tablet_pfad})')
-        print(f'Gemeinsam: {len(beide)} Nachweise\n')
-        for titel, keys, quelle, fk in (('Nur am PC → kommt aufs Tablet', nur_pc, n_pc, pc.fk),
-                                        ('Nur auf dem Tablet → kommt auf den PC', nur_tb, n_tb, tb.fk)):
-            print(f'{titel}: {len(keys)}')
+    plugin_neu = [] if a.ohne_plugin else plugin_pruefen(tb)
+
+    # --- Bericht
+    print(f'PC:     {len(n_pc)} Nachweise, {len(f_pc)} Fotos, {len(b_pc)} Biotope, {len(s_pc)} eigene Synonyme  ({pc.qgs})')
+    print(f'Tablet: {len(n_tb)} Nachweise, {len(f_tb)} Fotos, {len(b_tb)} Biotope, {len(s_tb)} eigene Synonyme  ({tablet_pfad})')
+    print(f'Gemeinsam: {len(beide)} Nachweise\n')
+    for titel, keys, quelle, fk in (('Nur am PC → kommt aufs Tablet', nur_pc, n_pc, pc.fk),
+                                    ('Nur auf dem Tablet → kommt auf den PC', nur_tb, n_tb, tb.fk)):
+        print(f'{titel}: {len(keys)}')
+        for k in sorted(keys):
+            print(f'  + {kurz(quelle[k], fk)}   [--weglassen {k[0]}:{k[1]}]')
+    if fnur_pc or fnur_tb:
+        print(f'Fotos: {len(fnur_pc)} nur PC, {len(fnur_tb)} nur Tablet → werden ergänzt')
+        for k in sorted(fnur_pc):
+            print(f'  + PC → Tablet: {k}')
+        for k in sorted(fnur_tb):
+            print(f'  + Tablet → PC: {k}')
+    if datei_zum_pc or datei_zum_tb:
+        print(f'Bilddateien: {len(datei_zum_pc)} Tablet → PC, {len(datei_zum_tb)} PC → Tablet')
+    for f in fehlt_ganz:
+        print(f'⚠ Bilddatei fehlt auf beiden Seiten: {f}')
+    if syn_nur_pc or syn_nur_tb:
+        print(f'Eigene Synonyme: {len(syn_nur_pc)} nur PC, {len(syn_nur_tb)} nur Tablet → werden ergänzt')
+        for k in syn_nur_pc:
+            print(f'  + PC → Tablet: {s_pc[k].get("synonym")}')
+        for k in syn_nur_tb:
+            print(f'  + Tablet → PC: {s_tb[k].get("synonym")}')
+    for titel, upd in (('PC → Tablet', upd_tb + fupd_tb), ('Tablet → PC', upd_pc + fupd_pc)):
+        for k, feld, wert in upd:
+            print(f'  ~ {feld} {titel}: {k}: {wert}')
+    for alt, neu in sorted(ersetzt.items()):
+        print(f'  ✎ in QField bearbeitet: {alt[0]}:{alt[1]} → {neu[0]}:{neu[1]} (alter Eintrag wird entfernt)')
+    if spalten_pc or spalten_tb:
+        print('Spalten für Bearbeitungen werden ergänzt: ' + ', '.join(
+            f'{s}: {", ".join(n for n, _ in sp)}' for s, sp in (('PC', spalten_pc), ('Tablet', spalten_tb)) if sp))
+    if weg_pc or weg_tb or fweg_pc or fweg_tb:
+        print(f'Wird entfernt: Nachweise {len(weg_pc)} PC / {len(weg_tb)} Tablet, '
+              f'Fotoeinträge {len(fweg_pc)} PC / {len(fweg_tb)} Tablet')
+    for k, feld, w_pc, w_tb in konflikt + fkonflikt:
+        print(f'⚠ {feld} unterschiedlich, bleibt wie es ist: {k}\n     PC: {w_pc!r}  Tablet: {w_tb!r}')
+    if tabelle_pc or tabelle_tb or layer_tb:
+        print(f'Fototabelle wird angelegt: PC {"ja" if tabelle_pc else "-"}, Tablet {"ja" if tabelle_tb else "-"}'
+              f'{", Layer im Tablet-Projekt eintragen" if layer_tb else ""}')
+    if bnur_pc or bnur_tb:
+        print(f'Biotoptypen: {len(bnur_pc)} nur PC, {len(bnur_tb)} nur Tablet → werden ergänzt')
+        for titel, keys, quelle in (('PC → Tablet', bnur_pc, b_pc), ('Tablet → PC', bnur_tb, b_tb)):
             for k in sorted(keys):
-                print(f'  + {kurz(quelle[k], fk)}   [--weglassen {k[0]}:{k[1]}]')
-        if fnur_pc or fnur_tb:
-            print(f'Fotos: {len(fnur_pc)} nur PC, {len(fnur_tb)} nur Tablet → werden ergänzt')
-            for k in sorted(fnur_pc):
-                print(f'  + PC → Tablet: {k}')
-            for k in sorted(fnur_tb):
-                print(f'  + Tablet → PC: {k}')
-        if datei_zum_pc or datei_zum_tb:
-            print(f'Bilddateien: {len(datei_zum_pc)} Tablet → PC, {len(datei_zum_tb)} PC → Tablet')
-        for f in fehlt_ganz:
-            print(f'⚠ Bilddatei fehlt auf beiden Seiten: {f}')
-        if syn_nur_pc or syn_nur_tb:
-            print(f'Eigene Synonyme: {len(syn_nur_pc)} nur PC, {len(syn_nur_tb)} nur Tablet → werden ergänzt')
-            for k in syn_nur_pc:
-                print(f'  + PC → Tablet: {s_pc[k].get("synonym")}')
-            for k in syn_nur_tb:
-                print(f'  + Tablet → PC: {s_tb[k].get("synonym")}')
-        for titel, upd in (('PC → Tablet', upd_tb + fupd_tb), ('Tablet → PC', upd_pc + fupd_pc)):
-            for k, feld, wert in upd:
-                print(f'  ~ {feld} {titel}: {k}: {wert}')
-        for alt, neu in sorted(ersetzt.items()):
-            print(f'  ✎ in QField bearbeitet: {alt[0]}:{alt[1]} → {neu[0]}:{neu[1]} (alter Eintrag wird entfernt)')
-        if spalten_pc or spalten_tb:
-            print('Spalten für Bearbeitungen werden ergänzt: ' + ', '.join(
-                f'{s}: {", ".join(n for n, _ in sp)}' for s, sp in (('PC', spalten_pc), ('Tablet', spalten_tb)) if sp))
-        if weg_pc or weg_tb or fweg_pc or fweg_tb:
-            print(f'Wird entfernt: Nachweise {len(weg_pc)} PC / {len(weg_tb)} Tablet, '
-                  f'Fotoeinträge {len(fweg_pc)} PC / {len(fweg_tb)} Tablet')
-        for k, feld, w_pc, w_tb in konflikt + fkonflikt:
-            print(f'⚠ {feld} unterschiedlich, bleibt wie es ist: {k}\n     PC: {w_pc!r}  Tablet: {w_tb!r}')
-        if tabelle_pc or tabelle_tb or layer_tb:
-            print(f'Fototabelle wird angelegt: PC {"ja" if tabelle_pc else "-"}, Tablet {"ja" if tabelle_tb else "-"}'
-                  f'{", Layer im Tablet-Projekt eintragen" if layer_tb else ""}')
-        if bnur_pc or bnur_tb:
-            print(f'Biotoptypen: {len(bnur_pc)} nur PC, {len(bnur_tb)} nur Tablet → werden ergänzt')
-            for titel, keys, quelle in (('PC → Tablet', bnur_pc, b_pc), ('Tablet → PC', bnur_tb, b_tb)):
-                for k in sorted(keys):
-                    d = quelle[k]
-                    print(f'  + {titel}: {k[0]} · {k[1]} {k[2]} {d.get("name") or ""} ({d.get("rolle") or "-"})'
-                          f'   [--biotop-weglassen {k[0]}:{k[1]}:{k[2]}]')
-        for titel, upd in (('PC → Tablet', bupd_tb), ('Tablet → PC', bupd_pc)):
-            for k, feld, wert in upd:
-                print(f'  ~ Biotop {feld} {titel}: {":".join(k)}: {wert}')
-        for k, feld, w_pc, w_tb in bkonflikt:
-            print(f'⚠ Biotop {feld} unterschiedlich, bleibt wie es ist: {":".join(k)}\n     PC: {w_pc!r}  Tablet: {w_tb!r}')
-        for (fl, sch), codes in sorted(haupt_doppelt.items()):
-            print(f'⚠ Fläche {fl}: mehrere Hauptbiotope ({sch}: {", ".join(sorted(codes))}) – eins auf Neben setzen')
-        if bweg_pc or bweg_tb:
-            print(f'Biotop-Zuordnungen werden entfernt: {len(bweg_pc)} PC / {len(bweg_tb)} Tablet')
-        if kat_neu or btab_tb or blayer_tb:
-            print('Biotop-Katalog fürs Tablet: ' + ', '.join(f'{s} ({n})' for s, n in sorted(kat_pc.items()))
-                  + (' + Layer im Tablet-Projekt' if blayer_tb else ''))
-        if btab_pc:
-            print('Biotop-Tabellen werden am PC angelegt')
-        if var_neu:
-            print(f'Biotoptypen-Schlüssel fürs Tablet: {var_tb or "-"} → {var_pc}')
-        if plugin_neu:
-            print(f'QField-Plugin wird aktualisiert: {", ".join(plugin_neu)}')
-        if reg_pc or reg_tb:
-            print('GeoPackage-Registrierung wird ergänzt: ' +
-                  ', '.join(f'{s}: {l["tabelle"]}' for s, ls in (('PC', reg_pc), ('Tablet', reg_tb)) for l in ls))
+                d = quelle[k]
+                print(f'  + {titel}: {k[0]} · {k[1]} {k[2]} {d.get("name") or ""} ({d.get("rolle") or "-"})'
+                      f'   [--biotop-weglassen {k[0]}:{k[1]}:{k[2]}]')
+    for titel, upd in (('PC → Tablet', bupd_tb), ('Tablet → PC', bupd_pc)):
+        for k, feld, wert in upd:
+            print(f'  ~ Biotop {feld} {titel}: {":".join(k)}: {wert}')
+    for k, feld, w_pc, w_tb in bkonflikt:
+        print(f'⚠ Biotop {feld} unterschiedlich, bleibt wie es ist: {":".join(k)}\n     PC: {w_pc!r}  Tablet: {w_tb!r}')
+    for (fl, sch), codes in sorted(haupt_doppelt.items()):
+        print(f'⚠ Fläche {fl}: mehrere Hauptbiotope ({sch}: {", ".join(sorted(codes))}) – eins auf Neben setzen')
+    if bweg_pc or bweg_tb:
+        print(f'Biotop-Zuordnungen werden entfernt: {len(bweg_pc)} PC / {len(bweg_tb)} Tablet')
+    if kat_neu or btab_tb or blayer_tb:
+        print('Biotop-Katalog fürs Tablet: ' + ', '.join(f'{s} ({n})' for s, n in sorted(kat_pc.items()))
+              + (' + Layer im Tablet-Projekt' if blayer_tb else ''))
+    if btab_pc:
+        print('Biotop-Tabellen werden am PC angelegt')
+    if var_neu:
+        print(f'Biotoptypen-Schlüssel fürs Tablet: {var_tb or "-"} → {var_pc}')
+    if plugin_neu:
+        print(f'QField-Plugin wird aktualisiert: {", ".join(plugin_neu)}')
+    if reg_pc or reg_tb:
+        print('GeoPackage-Registrierung wird ergänzt: ' +
+              ', '.join(f'{s}: {l["tabelle"]}' for s, ls in (('PC', reg_pc), ('Tablet', reg_tb)) for l in ls))
 
-        nichts = not (nur_pc or nur_tb or upd_pc or upd_tb or weg_pc or weg_tb or fnur_pc or fnur_tb
-                      or fupd_pc or fupd_tb or fweg_pc or fweg_tb or datei_zum_pc or datei_zum_tb
-                      or syn_nur_pc or syn_nur_tb or tabelle_pc or tabelle_tb or layer_tb or plugin_neu
-                      or reg_pc or reg_tb or bnur_pc or bnur_tb or bupd_pc or bupd_tb or bweg_pc or bweg_tb
-                      or kat_neu or btab_pc or btab_tb or blayer_tb or var_neu or spalten_pc or spalten_tb)
-        if nichts:
-            print('\n✓ Beide Stände sind gleich.')
-            return
-        if not a.ausfuehren:
-            print('\nNur Vorschau. Übernehmen mit --ausfuehren')
-            return
+    nichts = not (nur_pc or nur_tb or upd_pc or upd_tb or weg_pc or weg_tb or fnur_pc or fnur_tb
+                  or fupd_pc or fupd_tb or fweg_pc or fweg_tb or datei_zum_pc or datei_zum_tb
+                  or syn_nur_pc or syn_nur_tb or tabelle_pc or tabelle_tb or layer_tb or plugin_neu
+                  or reg_pc or reg_tb or bnur_pc or bnur_tb or bupd_pc or bupd_tb or bweg_pc or bweg_tb
+                  or kat_neu or btab_pc or btab_tb or blayer_tb or var_neu or spalten_pc or spalten_tb)
+    if nichts:
+        print('\n✓ Beide Stände sind gleich.')
+        return
+    if not a.ausfuehren:
+        print('\nNur Vorschau. Übernehmen mit --ausfuehren')
+        return
 
-        pc_dateien = [pc.an['datei']] + ([pc.es['datei']] if pc.es else [])
-        if not wal_pruefen(pc_dateien):
-            raise SystemExit('Abgebrochen.')
+    pc_dateien = [pc.an['datei']] + ([pc.es['datei']] if pc.es else [])
+    if not wal_pruefen(pc_dateien):
+        raise SystemExit('Abgebrochen.')
 
-        def fuer(seite, d):
-            """Fremdschlüssel-Spalte der Zielseite setzen, falls die Seiten unterschiedlich heißen."""
-            d = dict(d)
-            quelle_fk = tb.fk if seite is pc else pc.fk
-            if quelle_fk != seite.fk:
-                d[seite.fk] = d.pop(quelle_fk, None)
-            return d
+    def fuer(seite, d):
+        """Fremdschlüssel-Spalte der Zielseite setzen, falls die Seiten unterschiedlich heißen."""
+        d = dict(d)
+        quelle_fk = tb.fk if seite is pc else pc.fk
+        if quelle_fk != seite.fk:
+            d[seite.fk] = d.pop(quelle_fk, None)
+        return d
 
-        def biotope_anwenden(seite, neu, upd, weg, tabelle):
-            if tabelle:
-                B.tabellen_anlegen(seite.an['datei'])
-            seite.biotope()                                        # Spaltenliste (neu) lesen
-            if neu or weg:
-                seite.schreiben(seite.bz, seite.bz_cols, seite.bz_pk, neu, weg, ('flaeche_id', 'schluessel', 'code'))
-            seite.aktualisieren(seite.bz, upd, ('flaeche_id', 'schluessel', 'code'))
+    def biotope_anwenden(seite, neu, upd, weg, tabelle):
+        if tabelle:
+            B.tabellen_anlegen(seite.an['datei'])
+        seite.biotope()                                        # Spaltenliste (neu) lesen
+        if neu or weg:
+            seite.schreiben(seite.bz, seite.bz_cols, seite.bz_pk, neu, weg, ('flaeche_id', 'schluessel', 'code'))
+        seite.aktualisieren(seite.bz, upd, ('flaeche_id', 'schluessel', 'code'))
 
-        def anwenden(seite, n_neu, n_upd, n_weg, f_neu, f_upd, f_weg, syn_neu, dateien, quelle_home, tabelle):
-            seite.registrieren(seite.unregistriert())
-            seite.nachweisspalten_ergaenzen()
-            if tabelle:
-                seite.fototabelle_anlegen()
-            seite.fotos()                                          # Spaltenliste (neu) lesen
-            seite.schreiben(seite.an, seite.an_cols, seite.an_pk, n_neu, n_weg, (seite.fk, 'taxon_id'))
-            seite.aktualisieren(seite.an, n_upd, (seite.fk, 'taxon_id'))
-            seite.schreiben(seite.fo, seite.fo_cols, seite.fo_pk, f_neu, [(k,) for k in f_weg], ('datei',))
-            seite.aktualisieren(seite.fo, [((k,), feld, wert) for k, feld, wert in f_upd], ('datei',))
-            if seite.es and syn_neu:
-                seite.schreiben(seite.es, seite.es_cols, seite.es_pk, syn_neu)
-            for f in dateien:
-                (seite.home / f).parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(quelle_home / f, seite.home / f)
+    def anwenden(seite, n_neu, n_upd, n_weg, f_neu, f_upd, f_weg, syn_neu, dateien, quelle_home, tabelle):
+        seite.registrieren(seite.unregistriert())
+        seite.nachweisspalten_ergaenzen()
+        if tabelle:
+            seite.fototabelle_anlegen()
+        seite.fotos()                                          # Spaltenliste (neu) lesen
+        seite.schreiben(seite.an, seite.an_cols, seite.an_pk, n_neu, n_weg, (seite.fk, 'taxon_id'))
+        seite.aktualisieren(seite.an, n_upd, (seite.fk, 'taxon_id'))
+        seite.schreiben(seite.fo, seite.fo_cols, seite.fo_pk, f_neu, [(k,) for k in f_weg], ('datei',))
+        seite.aktualisieren(seite.fo, [((k,), feld, wert) for k, feld, wert in f_upd], ('datei',))
+        if seite.es and syn_neu:
+            seite.schreiben(seite.es, seite.es_cols, seite.es_pk, syn_neu)
+        for f in dateien:
+            (seite.home / f).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(quelle_home / f, seite.home / f)
 
-        print('\nPC-Projekt aktualisieren …')
-        sichern(pc_dateien + ([pc.qgs] if btab_pc else []))
-        anwenden(pc, [fuer(pc, n_tb[k]) for k in nur_tb], upd_pc, weg_pc,
-                 [f_tb[k] for k in fnur_tb], fupd_pc, fweg_pc, [s_tb[k] for k in syn_nur_tb],
-                 datei_zum_pc, tb.home, tabelle_pc)
-        biotope_anwenden(pc, [b_tb[k] for k in bnur_tb], bupd_pc, bweg_pc, btab_pc)
-        if btab_pc:
-            B.qgs_layer_eintragen(pc.qgs, pc.an['datei'])
+    print('\nPC-Projekt aktualisieren …')
+    sichern(pc_dateien + ([pc.datei.original] if btab_pc else []))
+    anwenden(pc, [fuer(pc, n_tb[k]) for k in nur_tb], upd_pc, weg_pc,
+             [f_tb[k] for k in fnur_tb], fupd_pc, fweg_pc, [s_tb[k] for k in syn_nur_tb],
+             datei_zum_pc, tb.home, tabelle_pc)
+    biotope_anwenden(pc, [b_tb[k] for k in bnur_tb], bupd_pc, bweg_pc, btab_pc)
+    if btab_pc:
+        B.qgs_layer_eintragen(pc.qgs, pc.an['datei'])
+    pc.datei.zurueckschreiben()                      # .qgz: geänderte .qgs wieder einpacken
 
-        print('Tablet-Zip erstellen …')
-        anwenden(tb, [fuer(tb, n_pc[k]) for k in nur_pc], upd_tb, weg_tb,
-                 [f_pc[k] for k in fnur_pc], fupd_tb, fweg_tb, [s_pc[k] for k in syn_nur_pc],
-                 datei_zum_tb, pc.home, tabelle_tb)
-        if kat_neu or btab_tb:
-            tb.katalog_kopieren(pc)
-        biotope_anwenden(tb, [b_pc[k] for k in bnur_pc], bupd_tb, bweg_tb, btab_tb)
-        if blayer_tb:
-            B.qgs_layer_eintragen(tb.qgs, tb.an['datei'])
-        if var_neu:
-            B.qgs_variable_setzen(tb.qgs, B.VAR_SCHLUESSEL, var_pc)
-        (tb.home / FOTO_ORDNER).mkdir(exist_ok=True)
-        if layer_tb:
-            tb.fotolayer_eintragen()
-        for q, z in ([] if a.ohne_plugin else plugin_ziele(tb)):
-            shutil.copy2(q, z)
+    print('Tablet-Zip erstellen …')
+    anwenden(tb, [fuer(tb, n_pc[k]) for k in nur_pc], upd_tb, weg_tb,
+             [f_pc[k] for k in fnur_pc], fupd_tb, fweg_tb, [s_pc[k] for k in syn_nur_pc],
+             datei_zum_tb, pc.home, tabelle_tb)
+    if kat_neu or btab_tb:
+        tb.katalog_kopieren(pc)
+    biotope_anwenden(tb, [b_pc[k] for k in bnur_pc], bupd_tb, bweg_tb, btab_tb)
+    if blayer_tb:
+        B.qgs_layer_eintragen(tb.qgs, tb.an['datei'])
+    if var_neu:
+        B.qgs_variable_setzen(tb.qgs, B.VAR_SCHLUESSEL, var_pc)
+    (tb.home / FOTO_ORDNER).mkdir(exist_ok=True)
+    if layer_tb:
+        tb.fotolayer_eintragen()
+    for q, z in ([] if a.ohne_plugin else plugin_ziele(tb)):
+        shutil.copy2(q, z)
 
-        stamm = tablet_pfad.stem if tablet_pfad.suffix.lower() == '.zip' else tablet_pfad.name
-        stamm = stamm.split('_abgleich_')[0]           # nicht bei jedem Lauf verlängern
-        ziel = tablet_pfad.with_name(f'{stamm}_abgleich_{datetime.now():%Y-%m-%d_%H%M}.zip')
-        basis = tb.home
-        with zipfile.ZipFile(ziel, 'w', zipfile.ZIP_DEFLATED) as z:
-            for p in sorted(basis.rglob('*')):
-                if p.is_file() and not p.name.endswith(('-wal', '-shm', '.bak', '~')):
-                    z.write(p, p.relative_to(basis))
-            z.writestr(FOTO_ORDNER + '/', '')          # leeren Fotoordner mitnehmen
-        print(f'\n✓ Fertig. PC: {len(pc.nachweise())} Nachweise / {len(pc.fotos())} Fotos / {len(pc.biotope())} Biotope, '
-              f'Tablet: {len(tb.nachweise())} Nachweise / {len(tb.fotos())} Fotos / {len(tb.biotope())} Biotope')
-        print(f'→ Fürs Tablet: {ziel}')
+    tb.datei.zurueckschreiben()
+    stamm = tablet_pfad.stem if tablet_pfad.suffix.lower() == '.zip' else tablet_pfad.name
+    stamm = stamm.split('_abgleich_')[0]           # nicht bei jedem Lauf verlängern
+    ziel = tablet_pfad.with_name(f'{stamm}_abgleich_{datetime.now():%Y-%m-%d_%H%M}.zip')
+    basis = tb.home
+    with zipfile.ZipFile(ziel, 'w', zipfile.ZIP_DEFLATED) as z:
+        for p in sorted(basis.rglob('*')):
+            if p.is_file() and not p.name.endswith(('-wal', '-shm', '.bak', '~')):
+                z.write(p, p.relative_to(basis))
+        z.writestr(FOTO_ORDNER + '/', '')          # leeren Fotoordner mitnehmen
+    print(f'\n✓ Fertig. PC: {len(pc.nachweise())} Nachweise / {len(pc.fotos())} Fotos / {len(pc.biotope())} Biotope, '
+          f'Tablet: {len(tb.nachweise())} Nachweise / {len(tb.fotos())} Fotos / {len(tb.biotope())} Biotope')
+    print(f'→ Fürs Tablet: {ziel}')
 
 
 if __name__ == '__main__':

@@ -74,9 +74,10 @@ def projekt_lesen(qgs):
         datei, _, rest = src.partition('|')
         tabelle = next((t.split('=', 1)[1] for t in rest.split('|') if t.startswith('layername=')), None)
         pfad = (qgs.parent / datei).resolve()
+        explizit = bool(tabelle)
         if not tabelle:
             tabelle = tabelle_raten(pfad, name)
-        layer[lid] = {'datei': pfad, 'tabelle': tabelle, 'name': name}
+        layer[lid] = {'datei': pfad, 'tabelle': tabelle, 'name': name, 'explizit': explizit}
     var = {}
     v = root.find('.//properties/Variables')
     if v is not None:
@@ -87,11 +88,19 @@ def projekt_lesen(qgs):
 
 
 def layer_suchen(layer, ref, standard):
+    """Layer-ID, sonst Tabellenname (|layername=…), erst danach Anzeigename – so gewinnt nicht ein gleichnamiger
+    Layer, der z. B. auf eine Sicherungskopie ohne layername zeigt."""
     if ref and ref in layer:
         return layer[ref]
-    for lid, l in layer.items():
-        if l['name'] in (ref, standard) or l['tabelle'] in (ref, standard):
-            return l
+    namen = [n for n in (ref, standard) if n]
+    for n in namen:
+        for l in layer.values():
+            if l['tabelle'] == n and l.get('explizit'):
+                return l
+    for n in namen:
+        for l in layer.values():
+            if l['tabelle'] == n or l['name'] == n:
+                return l
     return None
 
 

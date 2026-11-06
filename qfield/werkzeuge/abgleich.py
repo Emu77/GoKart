@@ -551,6 +551,11 @@ def abgleichen(a, pc, tb, tablet_pfad):
     # --- Bericht
     print(f'PC:     {len(n_pc)} Nachweise, {len(f_pc)} Fotos, {len(b_pc)} Biotope, {len(s_pc)} eigene Synonyme  ({pc.qgs})')
     print(f'Tablet: {len(n_tb)} Nachweise, {len(f_tb)} Fotos, {len(b_tb)} Biotope, {len(s_tb)} eigene Synonyme  ({tablet_pfad})')
+    for seite in (pc, tb):
+        quellen = [f'Nachweise {seite.an["datei"].name}:{seite.an["tabelle"]}']
+        if seite.es:
+            quellen.append(f'Synonyme {seite.es["datei"].name}:{seite.es["tabelle"]}')
+        print(f'  {seite.name}-Dateien: ' + ', '.join(quellen))
     print(f'Gemeinsam: {len(beide)} Nachweise\n')
     for titel, keys, quelle, fk in (('Nur am PC → kommt aufs Tablet', nur_pc, n_pc, pc.fk),
                                     ('Nur auf dem Tablet → kommt auf den PC', nur_tb, n_tb, tb.fk)):

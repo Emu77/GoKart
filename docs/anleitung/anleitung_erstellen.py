@@ -22,8 +22,8 @@ from reportlab.platypus import (BaseDocTemplate, CondPageBreak, Flowable, Frame,
 from reportlab.platypus.tableofcontents import TableOfContents
 
 # ---------------------------------------------------------------- Stand
-STAND = '27.10.2026'
-QFIELD_PLUGIN = 'v0.5'
+STAND = '06.11.2026'
+QFIELD_PLUGIN = 'v0.6'
 DESKTOP = '0.6.0'
 ZIEL = Path(__file__).resolve().parents[1] / 'GoKart_QField_Anleitung.pdf'
 
@@ -328,7 +328,8 @@ class Doc(BaseDocTemplate):
         cv.drawString(22 * mm, h - 71 * mm, 'mit QField und QGIS')
         cv.setFont('DV', 9.6)
         cv.drawString(22 * mm, h - 86 * mm, 'Anleitung: Einrichtung, Erfassungsmodule, Geländearbeit,')
-        cv.drawString(22 * mm, h - 92 * mm, 'Biotoptypen, Standortfotos, Übertragung, Abgleich, Fehlerbehebung')
+        cv.drawString(22 * mm, h - 92 * mm, 'Biotoptypen, Standortfotos, Bearbeiten, Übertragung, Abgleich,')
+        cv.drawString(22 * mm, h - 98 * mm, 'iPad, Fehlerbehebung')
         cv.restoreState()
 
     @staticmethod
@@ -362,10 +363,9 @@ def titel():
         'Repository: github.com/Emu77/GoKart',
         f'Stand der Anleitung: {STAND}',
     ]
-    neu = ('Seit der Fassung vom 25.10.2026: <b>Biotoptypen</b> (Haupt-/Nebenbiotop, Bundes- und Landesschlüssel, '
-           'historische Schlüssel), <b>Erfassungsmodule je Projekt</b> (Arten / Fotos / Biotoptypen wählbar), '
-           'Übertragung per <b>QField Sync</b> und <b>qfield_paket.py</b> (Zip für Telegram/USB), '
-           'erweiterte Fehlerbehebung.')
+    neu = ('Seit der Fassung vom 27.10.2026: <b>Artnachweise mobil bearbeiten</b> (Plugin 0.6: Art tauschen, '
+           'Fläche ändern, Bemerkung diktieren, „Letzte korrigieren“), Abgleich bearbeiteter Nachweise, '
+           'eigenes Kapitel <b>iPad (iOS)</b>, ergänzte Fehlerbehebung und Kurzreferenz.')
     return ([Spacer(1, 4 * mm)] + [P(z) for z in zeilen] + [Spacer(1, 8 * mm)] + BOX('neu', neu) +
             [NextPageTemplate('inhalt'), PageBreak()])
 
@@ -447,7 +447,8 @@ def k3_datenmodell():
         ['Flächen', 'Polygon', 'eindeutiges Schlüsselfeld, optional Anzeigefeld', 'beliebiger Polygon-Layer; '
          'Schlüssel am besten als <b>Text</b>'],
         ['artnachweise', 'Tabelle', 'flaeche_id, taxon_id, wissenschaftlicher_name, deutscher_name, '
-         'original_eingabe, erfasst_am, bemerkung', 'Modul Arten; eine Art je Fläche nur einmal'],
+         'original_eingabe, erfasst_am, bemerkung, geaendert_am, ersetzt', 'Modul Arten; eine Art je Fläche nur '
+         'einmal. geaendert_am/ersetzt ab Plugin 0.6 (legt abgleich.py bei älteren Projekten an)'],
         ['eigene_synonyme', 'Tabelle', 'taxon_id, synonym, schluessel, angelegt_am', 'entsteht beim Erfassen'],
         ['taxon', 'Tabelle', 'taxon_id, wissenschaftlicher_name, deutscher_name, rang, autor_name',
          'Referenz, schreibgeschützt (ca. 6.100 Taxa)'],
@@ -682,6 +683,41 @@ def k7_arten():
     f += BOX('hinweis', 'Die Diagnosezeile zeigt nach jedem Speichern die Einzelschritte (start, hinzufügen, '
              'speichern). Bei Fehlern ist sie rot und enthält die Meldung des Layers. Hängende ungespeicherte '
              'Änderungen werden beim Öffnen des Dialogs nachgespeichert.')
+    f += H2('Erfasste Arten bearbeiten (ab Plugin 0.6)')
+    f += [P('Falsch verstandene Art, falsche Fläche oder eine Bemerkung nachtragen – das geht direkt im Gelände, '
+            'ohne den Eintrag zu löschen und neu zu erfassen.'), Spacer(1, 4), Mockup([
+        ('titel', 'GoKart · Arterfassung', 'Schließen'),
+        ('label', 'Fläche'),
+        ('feld', '6-GFy (10)  ▾', ['GPS', 'Karte']),
+        ('zeile', '✎ Bearbeiten: Trauben-Eiche', 'Abbrechen', 1),
+        ('klein', 'Quercus petraea · erfasst 2026-11-06 10:14 · Eingabe „trauben eiche“'),
+        ('feld', 'Fläche:  6-GFy (10)  ▾', 2),
+        ('feld', 'Bemerkung: Deckung 2, blühend', 3),
+        ('label', 'Neue Art (optional)'),
+        ('feld', 'stiel eiche', 4),
+        ('liste', [('Stiel-Eiche', 'Quercus robur L. · Art', True)]),
+        ('knopf', 'Speichern: Art → Stiel-Eiche · Bemerkung', 5),
+        ('zeile', 'Erfasst auf 6-GFy: 3 Arten', 'Letzte korrigieren', 6),
+        ('zeile', 'Sumpf-Dotterblume   Caltha palustris', 'Bearbeiten  Löschen'),
+    ], [(1, 'gelber Kasten: welcher Eintrag gerade bearbeitet wird; <b>Abbrechen</b> verwirft'),
+        (2, 'Fläche ändern – Eintrag wandert auf die neue Fläche'),
+        (3, 'Bemerkung tippen oder diktieren; leeren = Bemerkung entfernen'),
+        (4, 'neue Art sprechen/tippen – <b>leer lassen = Art bleibt</b>'),
+        (5, 'Knopf zeigt, was sich ändert; auch per Enter'),
+        (6, '<b>Letzte korrigieren</b> öffnet die zuletzt erfasste Art; sonst <b>Bearbeiten</b> in der Zeile')])]
+    f += OL('In der Liste „Erfasst auf …“ bei einem Eintrag <b>Bearbeiten</b> antippen – oder <b>Letzte korrigieren</b> '
+            'für die zuletzt erfasste Art (typisch direkt nach einer Fehlerkennung).',
+            'Oben erscheint der gelbe Kasten „✎ Bearbeiten: …“ mit Originaleingabe und Erfassungszeit.',
+            'Ändern, was nötig ist: neue Art (gleiche Suche und Spracheingabe wie beim Erfassen), Fläche, Bemerkung.',
+            'Grüner Knopf „<b>Speichern: …</b>“ bzw. Enter. Meldung „✔ geändert: …“.')
+    f += UL('Nichts geändert → Meldung „Keine Änderung.“',
+            'Die neue Art ist auf der Zielfläche schon erfasst → abgewiesen („… bereits erfasst – dort ggf. den '
+            'doppelten Eintrag löschen“). Erst den Doppelten löschen, dann erneut speichern.',
+            'Gesetzt werden ' + c('geaendert_am') + ' und – bei neuer Art oder Fläche – ' + c('ersetzt') +
+            ' (alter Schlüssel „Fläche:taxon_id“). So entfernt abgleich.py den alten Eintrag auf der anderen Seite, '
+            'statt ihn zurückzuholen (Kapitel 11).',
+            'Ältere Projekte ohne diese Felder: Bearbeiten klappt trotzdem, die Felder legt abgleich.py beim nächsten '
+            + c('--ausfuehren') + ' an.')
     return f
 
 
@@ -792,6 +828,9 @@ python3 qfield/werkzeuge/abgleich.py <PC> <Tablet> --ausfuehren''')]
             c('--ohne-plugin') + ').',
             'Eindeutig sind: Nachweis = Fläche + taxon_id; Biotop = Fläche + Schlüssel + Code; Foto = Dateiname.',
             'Bemerkungen/Kommentare/Rolle werden nur ergänzt, nie überschrieben; Konflikte werden gemeldet.',
+            '<b>Bearbeitete Nachweise</b> (Plugin 0.6): Unterscheidet sich ' + c('geaendert_am') + ', gewinnt der '
+            'neuere Stand (Bemerkung, Originaleingabe – auch eine geleerte Bemerkung). Steht ein alter Schlüssel in ' +
+            c('ersetzt') + ', wird der alte Eintrag auf der anderen Seite entfernt.',
             'Gelöschte Einträge erkennt das Skript nicht – ausschließen mit ' + c('--weglassen W-34:68005') + ', ' +
             c('--biotop-weglassen W-34:SH:WMy') + ', ' + c('--foto-weglassen fotos/&lt;Datei&gt;.jpg') + '.',
             'Biotop-Katalog und geltender Schlüssel kommen immer vom PC.')
@@ -839,8 +878,8 @@ def k12_desktop():
     return f
 
 
-def k13_fehler():
-    f = H1('13 Fehlerbehebung')
+def k14_fehler():
+    f = H1('14 Fehlerbehebung')
     f += H2('Am PC (QGIS)')
     f += TAB(['Symptom / Meldung', 'Ursache', 'Lösung'], [
         ['⚠ Feldtypen passen nicht (integer64 ↔ string)', 'Schlüsselfeld ist eine Zahl, Verweis flaeche_id ist Text',
@@ -890,6 +929,13 @@ def k13_fehler():
         ['Gelöschtes kommt nach Abgleich wieder', 'Abgleich ist eine Vereinigung', c('--weglassen') + ', ' +
          c('--biotop-weglassen') + ', ' + c('--foto-weglassen')],
         ['Dialog bei Tastatur zu eng', 'kleines Display', 'Gerät quer halten oder Tablet nutzen'],
+        ['Bearbeiten: „Keine Änderung.“', 'weder Art, Fläche noch Bemerkung geändert', 'Feld ändern oder '
+         '<b>Abbrechen</b>'],
+        ['Bearbeiten: „… bereits erfasst – doppelten Eintrag löschen“', 'Zielfläche hat die neue Art schon',
+         'Doppelten Eintrag löschen, dann erneut speichern'],
+        ['Korrigierte Art taucht nach Abgleich doppelt auf', 'eine Seite mit Plugin &lt; 0.6 bzw. ohne Feld ersetzt',
+         'überall Plugin 0.6 nutzen; ' + c('abgleich.py --ausfuehren') + ' legt die Felder an'],
+        ['iPad: kein Mikro auf der Tastatur', 'Diktierfunktion aus', 'Kapitel 13'],
     ], [50, 52, 68])
     f += H2('Tests am PC')
     f += [CODE('''python3 qfield/test/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json
@@ -898,7 +944,7 @@ node qfield/test/test_biotop.js
 QT_QPA_PLATFORM=offscreen python3 qfield/test/qml_harness.py qfield_projekt_kopie''')]
     f += BOX('achtung', 'Die qml_harness-Skripte simulieren QField und schreiben ins GeoPackage – nur mit einer Kopie.')
     f += H2('Offene Punkte')
-    f += UL('QField 3.x-Fallback ungetestet; iPad-Betrieb noch zu bestätigen.',
+    f += UL('QField 3.x-Fallback ungetestet; Test auf einem echten iPad steht aus (Kapitel 13).',
             'Rückweg über QField Sync mit den GoKart-Tabellen testen; abgleich.py für .qgz-Projekte.',
             'Kataloge SH (Hauptgruppe S), NI (außer Wälder), HH, HB, MV und BUND ergänzen.',
             'Übernahme vorhandener Biotopcodes aus Flächen-Shapes (z. B. Feld CODE) als Hauptbiotop.',
@@ -921,6 +967,7 @@ def kurzreferenz():
         ['1', 'Projekt öffnen, Plugin erlauben'],
         ['2', 'Knopf antippen → Fläche per GPS / Karte / Liste'],
         ['3', '<b>Arten</b>: Name sprechen → Vorschlag prüfen → Enter; Fehlhörung als Synonym merken'],
+        ['3a', '<b>Korrigieren</b>: „Letzte korrigieren“ bzw. „Bearbeiten“ → Art/Fläche/Bemerkung → Speichern'],
         ['4', '<b>Biotop</b>: Code/Name sprechen (auch buchstabiert) → Hauptbiotop / Nebenbiotop'],
         ['5', '<b>Kamera</b>: Foto → Kommentar diktieren → speichern'],
         ['6', 'Zu Hause: Export holen → abgleich.py bzw. QField Sync → Artenliste'],
@@ -928,11 +975,54 @@ def kurzreferenz():
     return f
 
 
+def k13_ipad():
+    f = H1('13 iPad (iOS)')
+    f += [P('Das Plugin enthält keinen Android-spezifischen Code: Es nutzt nur die QField-Schnittstellen und die '
+            'Spracheingabe der Bildschirmtastatur. Es läuft deshalb auf dem iPad genauso wie auf Android – '
+            'Unterschiede gibt es bei Diktat, Freigaben und Dateiübertragung.')]
+    f += BOX('hinweis', 'Der Betrieb auf einem echten iPad ist noch nicht getestet. Vor dem ersten Geländeeinsatz '
+             'einmal den kompletten Ablauf (Art, Biotop, Foto, Bearbeiten, Rückweg) mit einer Testfläche durchspielen.')
+    f += H2('Einrichten')
+    f += OL('<b>QField</b> aus dem App Store installieren (Version 4.x).',
+            '<b>Diktierfunktion</b> einschalten: <i>Einstellungen → Allgemein → Tastatur → Diktierfunktion</i>. '
+            'Danach zeigt die Bildschirmtastatur ein Mikrofon. Sprache <b>Deutsch</b> als Tastatur hinzufügen.',
+            'Beim ersten Gebrauch Freigaben erlauben: <b>Standort</b> (Fläche per GPS), <b>Kamera</b> (Fotos), '
+            '<b>Mikrofon/Spracherkennung</b> (Diktat).',
+            'Offline-Diktat prüfen: im <b>Flugmodus</b> einen Pflanzennamen diktieren. Ob ohne Netz diktiert wird, '
+            'hängt von Gerät und iPadOS-Version ab.')
+    f += H2('Projekt aufs iPad bringen')
+    f += TAB(['Weg', 'Vorgehen'], [
+        ['Zip per AirDrop / Mail / Telegram', 'Zip aus ' + c('qfield_paket.py') + ' in der Dateien-App sichern, dann in '
+         'QField <b>Projekt aus ZIP importieren</b> und das Zip wählen.'],
+        ['Mac per Kabel', 'Finder → iPad → <b>Dateien</b> → QField → Projektordner bzw. Zip hineinziehen.'],
+        ['Windows per Kabel', 'App „Apple Geräte“ (bzw. iTunes) → Dateifreigabe → QField → Dateien hinzufügen.'],
+        ['Linux', 'am einfachsten per Telegram/Mail oder Cloud-Speicher, dann wie Zeile 1.'],
+    ], [42, 128])
+    f += [P('Dann wie in Kapitel 6: Projekt öffnen, Projekt-Plugin <b>erlauben</b>, grüne Knöpfe in der Plugin-Leiste.')]
+    f += H2('Im Gelände')
+    f += UL('Namensfeld antippen → <b>Mikrofon</b> auf der Tastatur → Namen sprechen → Mikrofon/„Fertig“ → Enter.',
+            'iOS setzt beim Diktat oft Großbuchstaben oder einen Punkt („Löwenzahn.“) – die Suche ignoriert das.',
+            'Erscheinen die Vorschläge erst nach dem Ende des Diktats, kurz warten bzw. das Diktat beenden; Enter '
+            'speichert den eindeutigen Treffer.',
+            'Biotopcodes ggf. buchstabieren („we em ypsilon“) – Kapitel 8.',
+            'Die Dialoge sind max. 640 Pixel breit und mittig – hoch und quer nutzbar; auf dem iPad bleibt auch mit '
+            'Tastatur genug Platz für die Trefferliste.',
+            'Fotos: „Foto aufnehmen“ öffnet die Kamera; das Bild landet wie unter Android in ' + c('fotos/') + '.')
+    f += H2('Daten zurück an den PC')
+    f += OL('QField schließen.',
+            'Dateien-App → <b>Auf meinem iPad → QField</b> → Projektordner lange drücken → <b>Komprimieren</b>.',
+            'Das Zip per AirDrop, Mail, Telegram oder Kabel (Finder / Apple Geräte) an den PC.',
+            'Am PC ' + c('abgleich.py &lt;PC-Projekt&gt; &lt;Zip&gt; --ausfuehren') + ' (Kapitel 11); das erzeugte ' +
+            c('…_abgleich_&lt;Datum&gt;.zip') + ' wieder wie oben aufs iPad.')
+    return f
+
+
 def main():
     doc = Doc(ZIEL)
     story = titel() + inhalt()
     for k in (k1_ueberblick, k2_voraussetzungen, k3_datenmodell, k4_vorbereiten, k5_module, k6_uebertragen,
-              k7_arten, k8_biotope, k9_fotos, k10_suche, k11_zurueck, k12_desktop, k13_fehler, kurzreferenz):
+              k7_arten, k8_biotope, k9_fotos, k10_suche, k11_zurueck, k12_desktop, k13_ipad, k14_fehler,
+              kurzreferenz):
         story += k()
     doc.multiBuild(story)
     print(f'✔ {ZIEL}')

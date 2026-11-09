@@ -541,14 +541,19 @@ Item {
     }
 
     // ---------------------------------------------------------------- Fadenkreuz (Punkt manuell auf der Karte)
-    // Position des QField-Fadenkreuzes (rastet auf Flächenkanten/-ecken ein, wenn Einrasten an ist),
-    // sonst Kartenmitte. Ergebnis im Karten-KBS: { x, y, crs }
+    // Koordinate genau unter dem GoKart-Fadenkreuz (Mitte der Karte) im Karten-KBS: { x, y, crs }.
+    // Nicht QFields coordinateLocator: der liefert außerhalb des Bearbeitungsmodus eine alte bzw. die
+    // GPS-Position. Auch nicht mapSettings.center: das berücksichtigt Ränder (z. B. Positionierungsfeld).
     function fadenkreuzPunkt() {
         try {
             var ms = iface.mapCanvas().mapSettings;
-            var loc = null;
-            try { loc = iface.findItemByObjectName('coordinateLocator'); } catch (e1) {}
-            var c = (loc && loc.currentCoordinate && isFinite(loc.currentCoordinate.x)) ? loc.currentCoordinate : ms.center;
+            var c = null;
+            try {
+                var karte = kartenItem();
+                var p = fadenkreuzMarke.mapToItem(karte, fadenkreuzMarke.width / 2, fadenkreuzMarke.height / 2);
+                if (ms.screenToCoordinate) c = ms.screenToCoordinate(Qt.point(p.x, p.y));
+            } catch (e1) { protokoll('Fadenkreuz (Bildschirm): ' + e1, true); }
+            if (!c || !isFinite(c.x) || !isFinite(c.y)) c = ms.center;
             return { x: Number(c.x), y: Number(c.y), crs: ms.destinationCrs };
         } catch (e) { protokoll('Fadenkreuz: ' + e, true); }
         return null;
@@ -1250,6 +1255,7 @@ Item {
         visible: plugin.fadenkreuz !== ''
         z: 999
         width: 64; height: 64
+        // Mitte der Karte; Koordinate dazu liefert fadenkreuzPunkt() über screenToCoordinate
         x: parent ? (parent.width - width) / 2 : 0
         y: parent ? (parent.height - height) / 2 : 0
         Repeater {

@@ -333,17 +333,41 @@ class Positioning(QObject):
         return self.info
 
 
-class Karte(QObject):
+class MapSettings(QObject):
+    """Bildschirm -> Karte: 1 px = 1 m, Bildschirmmitte = KARTE_MITTE. center liegt absichtlich daneben
+    (QField rechnet dort Ränder ein) – das Plugin muss screenToCoordinate nutzen."""
     @Property('QVariantMap', constant=True)
+    def center(self):
+        return {'x': 1.0, 'y': 1.0}
+
+    @Property(str, constant=True)
+    def destinationCrs(self):
+        return 'EPSG:25832'
+
+    @Slot('QPointF', result='QVariantMap')
+    def screenToCoordinate(self, p):
+        w, h = win.width(), win.height()
+        return {'x': KARTE_MITTE[0] + (p.x() - w / 2), 'y': KARTE_MITTE[1] - (p.y() - h / 2)}
+
+
+KARTE_MITTE = [500100.0, 6000100.0]
+
+
+class Karte(QObject):
+    def __init__(self):
+        super().__init__()
+        self.ms = MapSettings()
+
+    @Property(QObject, constant=True)
     def mapSettings(self):
-        return {'center': {'x': 500100.0, 'y': 6000100.0}, 'destinationCrs': 'EPSG:25832'}
+        return self.ms
 
 
 class Locator(QObject):
     """QField-Fadenkreuz: currentCoordinate im Karten-KBS (hier = Layer-KBS)."""
     def __init__(self):
         super().__init__()
-        self.c = {'x': 500200.0, 'y': 6000150.0}
+        self.c = {'x': 1.0, 'y': 2.0}            # veraltet wie in QField außerhalb des Bearbeitens
 
     @Property('QVariantMap')
     def currentCoordinate(self):
@@ -352,7 +376,7 @@ class Locator(QObject):
 
 GPS, KARTE, LOCATOR = Positioning(), Karte(), Locator()
 from PySide6.QtQml import QQmlEngine  # noqa: E402
-for _o in (GPS, KARTE, LOCATOR):       # nicht vom JS-Garbage-Collector einsammeln lassen
+for _o in (GPS, KARTE, LOCATOR, KARTE.ms):       # nicht vom JS-Garbage-Collector einsammeln lassen
     QQmlEngine.setObjectOwnership(_o, QQmlEngine.CppOwnership)
 projekt_anlegen()
 app = QGuiApplication(sys.argv)
@@ -557,6 +581,7 @@ def _schritt(n):
         assert r['deckung'] == '4' and r['taxon_id'] == 3 and r['punkt_id'], r
         # Verschieben per Fadenkreuz: Punkt bekommt neue Lage, punkt_id und Artnachweise bleiben
         alt = zeilen('aufnahme_punkte')[0]
+        KARTE_MITTE[:] = [500200.0, 6000150.0]       # Locator zeigt woanders hin – darf nicht zählen
         p.fadenkreuzStarten('verschieben')
         assert prop('fadenkreuz') == 'verschieben' and finde('gokartFadenkreuzLeiste').property('visible')
         assert finde('gokartFadenkreuzMarke').property('visible'), 'Fadenkreuz-Marke fehlt'
@@ -575,7 +600,7 @@ def _schritt(n):
         assert len(prop('artenDerFlaeche')) == 1, 'Artnachweis hängt nicht mehr am Punkt'
         assert prop('fadenkreuz') == ''
         # Neuer Punkt per Fadenkreuz
-        LOCATOR.c = {'x': 500300.0, 'y': 6000400.0}
+        KARTE_MITTE[:] = [500300.0, 6000400.0]
         p.fadenkreuzStarten('neu')
         p.fadenkreuzUebernehmen()
     elif n == 9:

@@ -567,8 +567,8 @@ Item {
         if (!cfg.punkte || !gu) { meldung('Punkt-Layer oder QField-Geometriefunktionen fehlen.'); return; }
         if (modus === 'verschieben' && !aktiverPunkt) { meldung('Erst eine Punktaufnahme wählen.'); return; }
         fadenkreuz = modus;
-        fadenkreuzAktualisieren();
-        dialog.close();
+        dialog.close();                      // zuerst: die Karte muss frei sein, egal was danach passiert
+        try { fadenkreuzAktualisieren(); } catch (e) { protokoll('Fadenkreuz-Anzeige: ' + e, true); }
         meldung('Karte verschieben, bis das Fadenkreuz auf der Stelle liegt – dann „Hier setzen“.');
     }
 
@@ -1486,11 +1486,11 @@ Item {
                         onClicked: plugin.fadenkreuzStarten('neu')
                     }
                 }
-                Button {
+                Chip {
+                    objectName: 'gokartPunktVerschieben'
                     Layout.fillWidth: true
                     visible: plugin.aktiverPunkt !== ''
-                    text: 'Punkt verschieben (Fadenkreuz)'
-                    flat: true
+                    text: 'Diesen Punkt verschieben'
                     onClicked: plugin.fadenkreuzStarten('verschieben')
                 }
                 Label {

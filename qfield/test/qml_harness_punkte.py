@@ -351,6 +351,9 @@ class Locator(QObject):
 
 
 GPS, KARTE, LOCATOR = Positioning(), Karte(), Locator()
+from PySide6.QtQml import QQmlEngine  # noqa: E402
+for _o in (GPS, KARTE, LOCATOR):       # nicht vom JS-Garbage-Collector einsammeln lassen
+    QQmlEngine.setObjectOwnership(_o, QQmlEngine.CppOwnership)
 projekt_anlegen()
 app = QGuiApplication(sys.argv)
 engine = QQmlEngine()
@@ -556,6 +559,8 @@ def _schritt(n):
         alt = zeilen('aufnahme_punkte')[0]
         p.fadenkreuzStarten('verschieben')
         assert prop('fadenkreuz') == 'verschieben' and finde('gokartFadenkreuzLeiste').property('visible')
+        assert finde('gokartFadenkreuzMarke').property('visible'), 'Fadenkreuz-Marke fehlt'
+
         info = prop('fadenkreuzInfo')
         print('Fadenkreuz:', info)
         if SCREENSHOT:

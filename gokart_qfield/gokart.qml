@@ -1238,6 +1238,35 @@ Item {
         onTriggered: plugin.fadenkreuzAktualisieren()
     }
 
+    // Eigenes Fadenkreuz in der Kartenmitte – QFields Fadenkreuz ist nur im Bearbeitungsmodus sichtbar
+    function kartenItem() {
+        try { var c = iface.mapCanvas(); if (c && c.width !== undefined && c.height !== undefined) return c; } catch (e) {}
+        return iface.mainWindow().contentItem;
+    }
+    Item {
+        id: fadenkreuzMarke
+        objectName: 'gokartFadenkreuzMarke'
+        parent: plugin.kartenItem()
+        visible: plugin.fadenkreuz !== ''
+        z: 999
+        width: 64; height: 64
+        x: parent ? (parent.width - width) / 2 : 0
+        y: parent ? (parent.height - height) / 2 : 0
+        Repeater {
+            model: [{ w: 64, h: 6 }, { w: 6, h: 64 }]           // weiße Kontur
+            delegate: Rectangle {
+                required property var modelData
+                anchors.centerIn: parent; width: modelData.w; height: modelData.h; color: 'white'; radius: 2
+            }
+        }
+        Rectangle { anchors.centerIn: parent; width: 60; height: 2; color: '#b3261e' }
+        Rectangle { anchors.centerIn: parent; width: 2; height: 60; color: '#b3261e' }
+        Rectangle {
+            anchors.centerIn: parent; width: 22; height: 22; radius: 11
+            color: 'transparent'; border.color: '#b3261e'; border.width: 2
+        }
+    }
+
     // Leiste über der Karte, solange ein Punkt per Fadenkreuz gesetzt/verschoben wird
     Rectangle {
         id: fadenkreuzLeiste

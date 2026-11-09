@@ -1,7 +1,7 @@
 """GoKart – Biotoptypen-Schlüssel (Bund und Länder): Kataloge, Tabellen im GeoPackage, Suche.
 
 Reines Python (sqlite3/csv), ohne QGIS – wird vom Desktop-Plugin und von den Werkzeugen
-(qfield/werkzeuge/biotope_einspielen.py, abgleich.py) gemeinsam genutzt.
+(werkzeuge/biotope_einspielen.py, abgleich.py) gemeinsam genutzt.
 
 Tabellen im GeoPackage der Artnachweise:
   biotop_schluessel  Welche Schlüssel eingespielt sind (BUND, SH, NI, …) mit Quelle/Stand

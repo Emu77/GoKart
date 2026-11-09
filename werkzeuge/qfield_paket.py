@@ -6,7 +6,7 @@
 
 Ablauf:
     QGIS → QField Sync → „Für QField verpacken“ (z. B. nach ~/QField/export/kobm)
-    python3 qfield/werkzeuge/qfield_paket.py ~/QField/export/kobm
+    python3 werkzeuge/qfield_paket.py ~/QField/export/kobm
     → ~/QField/export/kobm.zip, in QField über „Projekt aus ZIP importieren“ öffnen
 
 Optionen:

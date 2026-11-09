@@ -42,7 +42,7 @@ Herausgeber einer Weiterverbreitung zustimmen (SH gibt die Liste auf Anfrage als
 PDFs herunterladen, Seiten der Übersicht/des Inhaltsverzeichnisses heraussuchen, dann (Vorschau ohne `--aus`):
 
 ```bash
-cd qfield/werkzeuge
+cd werkzeuge
 K=../../qgis_plugin/gokart_desktop/biotope_kataloge
 
 # Niedersachsen – Übersicht "II. Übersicht über die Biotoptypen" (Seitenzahlen anpassen)

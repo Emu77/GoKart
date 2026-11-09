@@ -4,7 +4,7 @@
 Variante für Standortfotos (Kamera-Knopf): simuliert zusätzlich platformUtilities (Kamera) und QfFileUtils.
 Simuliert iface, qgisProject, QfLayerUtils/QfFeatureUtils (QField 4.x) mit Daten aus gokart.gpkg
 und spielt einen Erfassungsablauf durch. Aufruf:
-    QT_QPA_PLATFORM=offscreen python3 test/qml_harness_fotos.py <projekt> [screenshot.png]
+    QT_QPA_PLATFORM=offscreen python3 tests/qml_harness_fotos.py <projekt> [screenshot.png]
 (Projektordner mit gokart.qml, gokart.gpkg inkl. Tabelle fotos und einer Fläche K6-001)
 """
 import re

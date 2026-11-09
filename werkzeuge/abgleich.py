@@ -52,7 +52,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'qgis_plugin' / 'gokart_desktop'))
 import biotope as B  # noqa: E402
 import punkte as P  # noqa: E402
 import module as M  # noqa: E402
@@ -65,8 +65,8 @@ FOTO_LAYER_ID = 'gokart_fotos'
 FOTO_SQL = (f'CREATE TABLE "{FOTO_TABELLE}" (fid INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, '
             'flaeche_id TEXT, taxon_id INTEGER, datei TEXT, kommentar TEXT, aufgenommen_am TEXT, '
             'lon REAL, lat REAL)')   # taxon_id bleibt frei (Standortfotos), für spätere Artfotos reserviert
-PLUGIN_ORDNER = Path(__file__).resolve().parents[2] / 'qfield_plugin'
-PLUGIN_QML = 'GoKart_Wohnung.qml'
+PLUGIN_ORDNER = Path(__file__).resolve().parents[1] / 'qfield_plugin'
+PLUGIN_QML = 'gokart.qml'
 PLUGIN_DATEIEN = ('gokart_suche.js', 'gokart_biotop.js', 'gokart_zusatz.js', 'gokart_icon.svg', 'gokart_foto.svg',
                   'gokart_biotop.svg')
 BIOTOP_FELDER = ('rolle', 'anteil', 'bemerkung')

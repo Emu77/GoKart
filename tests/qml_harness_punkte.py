@@ -8,7 +8,7 @@ Punkt per Fadenkreuz verschieben und neu setzen.
 Geometrie-Funktionen sind vereinfacht nachgebildet (Koordinaten = Meter im Layer-KBS, keine Umrechnung).
 
 Aufruf (aus dem Repo-Hauptordner):
-    QT_QPA_PLATFORM=offscreen python3 qfield/test/qml_harness_punkte.py [screenshot.png]
+    QT_QPA_PLATFORM=offscreen python3 tests/qml_harness_punkte.py [screenshot.png]
 """
 import re
 import shutil
@@ -22,7 +22,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6 import QtQuick  # noqa: F401 (registriert QQuickItem*-Konverter)
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[1]
 PLUGIN = REPO / 'qfield_plugin'
 TMP = Path(tempfile.mkdtemp(prefix='gokart_punkte_'))
 GPKG = TMP / 'gokart.gpkg'
@@ -32,7 +32,7 @@ BEHALTEN = []   # an QML übergebene Python-Objekte am Leben halten (sonst Segfa
 
 
 def projekt_anlegen():
-    shutil.copy2(PLUGIN / 'GoKart_Wohnung.qml', TMP / 'gokart.qml')
+    shutil.copy2(PLUGIN / 'gokart.qml', TMP / 'gokart.qml')
     for f in PLUGIN.iterdir():
         if f.suffix in ('.js', '.svg'):
             shutil.copy2(f, TMP / f.name)

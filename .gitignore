@@ -39,7 +39,7 @@ pflanzen/originaldaten/
 qfield_projekt/
 *.gpkg
 *.qgs~
-qfield/test/mock_qml/
+tests/mock_qml/
 testdaten.json
 
 # Eigene Kartier-/Biotopdaten nicht veröffentlichen

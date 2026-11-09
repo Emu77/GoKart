@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'qgis_plugin' / 'gokart_desktop'))
 import biotope as B  # noqa: E402
 from abgleich import sichern, wal_pruefen  # noqa: E402
 from artenliste_export import layer_suchen, projekt_finden, projekt_lesen  # noqa: E402

@@ -1,4 +1,4 @@
-// Aufruf: python3 test/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json && node test/test_suche.js testdaten.json
+// Aufruf: python3 tests/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json && node tests/test_suche.js testdaten.json
 const fs = require('fs'), vm = require('vm');
 const code = fs.readFileSync(__dirname + '/../plugin/gokart_suche.js', 'utf8').replace('.pragma library', '');
 const S = {}; vm.createContext(S); vm.runInContext(code, S);

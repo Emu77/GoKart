@@ -1,4 +1,4 @@
-# GoKart – QField-Prototyp (Stand 12.10.2026)
+# GoKart – QField: Technik, Datenmodell, Werkzeuge, Tests
 
 Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen oder tippen → aus max. 5 Vorschlägen wählen → speichern.**
 
@@ -7,17 +7,17 @@ Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen od
 | Ordner / Datei | Zweck |
 |---|---|
 | `qfield_projekt/` | *wird erzeugt* (nicht im Repo): `gokart.qgs`, `gokart.gpkg`, Plugin `gokart.qml` + `gokart_suche.js` + Icon |
-| `plugin/` | Quellcode des QField-Projekt-Plugins |
+| `qfield_plugin/` | Quellcode des QField-Projekt-Plugins (einzige Quelle) |
 | `werkzeuge/build_gokart_projekt.py` | Erzeugt GeoPackage + QGIS-Projekt aus `GoKart_Pflanzen.sqlite` (+ GermanSL) |
 | `werkzeuge/gokart_namen.py` | Aufbereitung der deutschen Namen (z. B. „Eiche (Unterart), Stiel-“ → „Stiel-Eiche“) |
 | `werkzeuge/zusatznamen.csv` | Eigene gebräuchliche Namen, z. B. Rot-Klee → *Trifolium pratense* |
-| `test/test_suche.js` | Suchtest mit Echtdaten (32 Fälle, alle bestanden) |
-| `test/qml_harness.py` | Simuliert QField und spielt den kompletten Ablauf mit dem Plugin durch |
+| `tests/test_suche.js` | Suchtest mit Echtdaten (32 Fälle, alle bestanden) |
+| `tests/qml_harness.py` | Simuliert QField und spielt den kompletten Ablauf mit dem Plugin durch |
 | `werkzeuge/biotope_einspielen.py` | Biotoptypen-Kataloge (Bund/Länder) in ein Projekt einspielen, Schlüssel setzen |
 | `werkzeuge/biotope_katalog_import.py` | Katalog-CSV aus Original-PDF/Excel erzeugen oder ergänzen |
-| `test/qml_harness_bearbeiten.py` | Bearbeiten von Artnachweisen (QField-Simulation, eigenes Mini-Projekt) |
-| `test/qml_harness_punkte.py`, `test/test_zusatz.js` | Punktaufnahmen + Zusatzangaben (QField-Simulation) und Sprach-Nachsatz (Node) |
-| `test/test_biotop.js`, `test/qml_harness_biotope.py` | Biotop-Suche (Node) und Biotop-Dialog (QField-Simulation) |
+| `tests/qml_harness_bearbeiten.py` | Bearbeiten von Artnachweisen (QField-Simulation, eigenes Mini-Projekt) |
+| `tests/qml_harness_punkte.py`, `tests/test_zusatz.js` | Punktaufnahmen + Zusatzangaben (QField-Simulation) und Sprach-Nachsatz (Node) |
+| `tests/test_biotop.js`, `tests/qml_harness_biotope.py` | Biotop-Suche (Node) und Biotop-Dialog (QField-Simulation) |
 
 ## Datenmodell (`gokart.gpkg`, EPSG:25833)
 
@@ -55,7 +55,7 @@ Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen od
 
 ```bash
 sudo apt install python3-qgis qgis-providers
-cd GoKart/qfield/werkzeuge
+cd GoKart/werkzeuge
 python3 build_gokart_projekt.py \
   --db /media/emu/daten/gpb/GoKart/pflanzen/GoKart_Pflanzen_Datenbank/GoKart_Pflanzen.sqlite \
   --germansl "/media/emu/daten/gpb/GoKart/pflanzen/germansl/GermanSL 1.5/germansl.sqlite" \
@@ -99,28 +99,26 @@ Ein neues Hauptbiotop macht das bisherige (gleicher Schlüssel) zum Nebenbiotop.
 ## Tests
 
 ```bash
-python3 test/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json
-node test/test_suche.js testdaten.json
-QT_QPA_PLATFORM=offscreen python3 test/qml_harness.py qfield_projekt_kopie
-node test/test_biotop.js
-QT_QPA_PLATFORM=offscreen python3 test/qml_harness_biotope.py projekt_kopie   # gokart.qml = qfield_plugin/GoKart_Wohnung.qml
+python3 tests/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json
+node tests/test_suche.js testdaten.json
+QT_QPA_PLATFORM=offscreen python3 tests/qml_harness.py qfield_projekt_kopie
+node tests/test_biotop.js
+QT_QPA_PLATFORM=offscreen python3 tests/qml_harness_biotope.py projekt_kopie   # gokart.qml = qfield_plugin/gokart.qml
 ```
 `qml_harness.py` schreibt in das GeoPackage, deshalb nur mit einer **Kopie** ausführen. Benötigt: `pip install PySide6-Essentials`.
 
 ## Plugin in vorhandene Projekte übernehmen
 
-`../qfield_plugin/` ist die einzige Quelle des Plugins (`GoKart_Wohnung.qml` + `gokart_*.js/svg`).
-Projektordner (`gokart_qfield/`, QField-Sync-Exporte) enthalten nur Kopien; die QML wird automatisch
+`qfield_plugin/` ist die einzige Quelle des Plugins (`gokart.qml` + `gokart_*.js/svg`).
+Projektordner (`qfield_projekt/`, QField-Sync-Exporte) enthalten nur Kopien; die QML wird automatisch
 so benannt wie die Projektdatei (`kobm_qfield.qgs` → `kobm_qfield.qml`).
 Nach Änderungen am Plugin – ohne Neubau, GeoPackage und `.qgs` bleiben unverändert:
 
 ```bash
-python3 werkzeuge/plugin_aktualisieren.py ../gokart_qfield            # kopieren
+python3 werkzeuge/plugin_aktualisieren.py qfield_projekt            # kopieren
 python3 werkzeuge/plugin_aktualisieren.py ~/QField/export/kobm        # QField-Sync-Export
-python3 werkzeuge/plugin_aktualisieren.py ../gokart_qfield --pruefen  # nur vergleichen
+python3 werkzeuge/plugin_aktualisieren.py qfield_projekt --pruefen  # nur vergleichen
 ```
-
-`plugin/` (alte Version 0.1, nur Arten) wird nicht mehr verwendet.
 
 ## Zip fürs Tablet (Telegram, Mail, USB)
 

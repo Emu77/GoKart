@@ -1,11 +1,11 @@
 """GoKart – welche Erfassungen ein Projekt nutzt (Arten, Fotos, Biotoptypen, Punktaufnahmen).
 
-Reines Python, ohne QGIS – gemeinsam für Desktop-Plugin und qfield/werkzeuge/build_gokart_projekt.py.
+Reines Python, ohne QGIS – gemeinsam für Desktop-Plugin und werkzeuge/build_gokart_projekt.py.
 
 Projektvariable gokart_module, kommagetrennt, z. B. "arten,biotope" oder "arten,punkte".
 "punkte" = Artnachweise auch an GPS-Punkten ohne Fläche (Layer aufnahme_punkte, siehe punkte.py).
 Fehlt die Variable (ältere Projekte), gelten alle Module – so ändert sich für bestehende Projekte nichts.
-Das QField-Plugin (GoKart_Wohnung.qml) liest dieselbe Variable und zeigt nur die passenden Knöpfe.
+Das QField-Plugin (gokart.qml) liest dieselbe Variable und zeigt nur die passenden Knöpfe.
 """
 
 VAR_MODULE = 'gokart_module'

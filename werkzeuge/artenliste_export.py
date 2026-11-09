@@ -20,7 +20,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'qgis_plugin' / 'gokart_desktop'))
 from artenliste import csv_schreiben, html_schreiben, punkt_ort  # noqa: E402
 
 M2_FELDER = ('flaeche_m2', 'Flaeche_m2', 'flaeche', 'Flaeche', 'area', 'flaeche_qm')

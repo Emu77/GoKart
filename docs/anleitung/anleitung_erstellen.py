@@ -357,7 +357,7 @@ def H2(t):
 # ---------------------------------------------------------------- Inhalt
 def titel():
     zeilen = [
-        f'QField-Plugin: <b>{QFIELD_PLUGIN}</b> ({c("qfield_plugin/GoKart_Wohnung.qml")})',
+        f'QField-Plugin: <b>{QFIELD_PLUGIN}</b> ({c("qfield_plugin/gokart.qml")})',
         f'Desktop: QGIS ≥ 3.22 mit Plugin „GoKart Desktop“ <b>{DESKTOP}</b>',
         'Zielplattform: QField 4.x auf Android und iPad (QField 3.x per Fallback, ungetestet)',
         'Repository: github.com/Emu77/GoKart',
@@ -395,16 +395,15 @@ def k1_ueberblick():
                   ('Zurück an PC', ['Export holen', 'abgleich.py', 'Artenliste'])]), Spacer(1, 8)]
     f += H2('Bestandteile')
     f += TAB(['Komponente', 'Ort im Repository', 'Aufgabe'], [
-        ['QField-Plugin', c('qfield_plugin/GoKart_Wohnung.qml') + ' + ' + c('gokart_suche.js') + ', ' +
+        ['QField-Plugin', c('qfield_plugin/gokart.qml') + ' + ' + c('gokart_suche.js') + ', ' +
          c('gokart_biotop.js') + ', Icons', 'Erfassung im Gelände: Arten, Fotos, Biotoptypen; Konfiguration über '
          'Projektvariablen'],
         ['GoKart Desktop', c('qgis_plugin/gokart_desktop/'), 'QGIS-Plugin: Projekt einrichten, Module wählen, am PC '
          'erfassen, Export, Biotop-Kataloge einspielen'],
         ['Biotop-Kataloge', c('qgis_plugin/gokart_desktop/biotope_kataloge/*.csv'), 'Schlüssel Bund/Länder als CSV'],
-        ['Werkzeuge', c('qfield/werkzeuge/'), 'Projekt bauen, Zip fürs Tablet, Plugin kopieren, Abgleich, '
+        ['Werkzeuge', c('werkzeuge/'), 'Projekt bauen, Zip fürs Tablet, Plugin kopieren, Abgleich, '
          'Artenliste, Biotope einspielen, Zusatztaxa'],
-        ['Tests', c('qfield/test/'), 'Suchtest (Node) und QField-Simulation (PySide6)'],
-        ['Alte Basisversion', c('qfield/plugin/'), '<i>nicht mehr verwenden</i> (v0.1, nur Arten, feste Layernamen)'],
+        ['Tests', c('tests/'), 'Suchtest (Node) und QField-Simulation (PySide6)'],
     ], [32, 64, 74])
     f += BOX('hinweis', 'Die QML-Datei des Plugins <b>muss genauso heißen wie die Projektdatei</b> und daneben liegen: '
              f'{c("gokart.qgs")} → {c("gokart.qml")}, {c("kobm_qfield.qgs")} → {c("kobm_qfield.qml")}. Nur dann '
@@ -547,7 +546,7 @@ def k4_vorbereiten():
     f += H2('Weg B – Projekt mit build_gokart_projekt.py bauen')
     f += [P('Erzeugt GeoPackage und QGIS-Projekt (Beziehungen, Auswahllisten, Biotop-Kataloge, Fototabelle) und legt das '
             'aktuelle Plugin dazu. Braucht PyQGIS.')]
-    f += [CODE('''cd GoKart/qfield/werkzeuge
+    f += [CODE('''cd GoKart/werkzeuge
 python3 build_gokart_projekt.py \\
   --db …/GoKart_Pflanzen_Datenbank/GoKart_Pflanzen.sqlite \\
   --germansl ".../GermanSL 1.5/germansl.sqlite" \\
@@ -612,18 +611,18 @@ def k6_uebertragen():
             'creating the project …“.',
             'Plugin dazulegen und zippen – ein Befehl:')
     f += [CODE('''cd /media/emu/daten/gpb/GoKart
-python3 qfield/werkzeuge/qfield_paket.py ~/QField/export/kobm
+python3 werkzeuge/qfield_paket.py ~/QField/export/kobm
 #  Projekt: kobm_qfield.qgs
 #  ✔ /home/emu/QField/export/kobm.zip  (27 Dateien, 0.9 MB)''')]
     f += UL(f'Legt das aktuelle Plugin aus {c("qfield_plugin/")} passend benannt dazu ({c("kobm_qfield.qml")} + js/svg).',
             f'Lässt Sicherungen ({c("*~")}, {c("*.bak")}) und SQLite-Hilfsdateien ({c("-wal")}, {c("-shm")}) weg.',
             'Warnt, wenn eine GeoPackage noch in QGIS geöffnet ist, und wenn das Zip über 50 MB wird (Fotos).',
             f'{c("--datum")} → {c("kobm_2026-10-27.zip")}; {c("--zip &lt;Datei&gt;")} → anderer Zielname.')
-    f += H2('Weg 2 – Projektordner direkt (gokart_qfield, Build-Ergebnis)')
+    f += H2('Weg 2 – Projektordner direkt (Build-Ergebnis, z. B. qfield_projekt)')
     f += [P('Ein mit dem Build-Skript erzeugter Ordner ist schon QField-fertig. Auch hier macht ' +
             c('qfield_paket.py &lt;Ordner&gt;') + ' das Zip. Nur das Plugin aktualisieren, ohne zu zippen:')]
-    f += [CODE('''python3 qfield/werkzeuge/plugin_aktualisieren.py gokart_qfield            # kopieren
-python3 qfield/werkzeuge/plugin_aktualisieren.py gokart_qfield --pruefen  # nur vergleichen''')]
+    f += [CODE('''python3 werkzeuge/plugin_aktualisieren.py qfield_projekt            # kopieren
+python3 werkzeuge/plugin_aktualisieren.py qfield_projekt --pruefen  # nur vergleichen''')]
     f += H2('Auf dem Gerät')
     f += TAB(['Weg', 'Vorgehen'], [
         ['Zip per Telegram / Mail', 'Zip auf dem Gerät öffnen bzw. speichern → in QField <b>Projekt aus ZIP '
@@ -769,9 +768,9 @@ def k8_biotope():
     f += BOX('tipp', 'Vorhandene Biotop-Shapes nutzen oft einen <b>älteren</b> Schlüssel. Codes wie GFy, GMm, HWr, '
              'MSb passen zu <b>SH_2003</b>, nicht zur aktuellen SH-Liste – dann SH_2003 wählen.')
     f += [P('Kataloge einspielen: im Einrichten-Dialog <b>Kataloge einspielen / aktualisieren</b> – oder ohne QGIS:')]
-    f += [CODE('''python3 qfield/werkzeuge/biotope_einspielen.py <Projekt> --schluessel SH
-python3 qfield/werkzeuge/biotope_einspielen.py <Projekt> --liste      # was ist wo vorhanden?''')]
-    f += [P('Weitere Länder aus Original-PDF/Excel: ' + c('qfield/werkzeuge/biotope_katalog_import.py') +
+    f += [CODE('''python3 werkzeuge/biotope_einspielen.py <Projekt> --schluessel SH
+python3 werkzeuge/biotope_einspielen.py <Projekt> --liste      # was ist wo vorhanden?''')]
+    f += [P('Weitere Länder aus Original-PDF/Excel: ' + c('werkzeuge/biotope_katalog_import.py') +
             ' (Anleitung in ' + c('biotope_kataloge/README.md') + ').')]
     f += BOX('hinweis', 'Die Listen stammen aus den veröffentlichten Kartieranleitungen. Vor einer Weitergabe prüfen, '
              'ob die Herausgeber der Weiterverbreitung zustimmen.')
@@ -809,7 +808,7 @@ def k10_suche():
     f += UL(c('zusatznamen.csv') + ' – zusätzliche Namen (' + c('wissenschaftlicher_name;name') + '), beim Bauen übernommen.',
             c('zusatztaxa.csv') + ' – fehlende Taxa (z. B. Moose), taxon_id ab 90001 fest vergeben.',
             'In ein bestehendes GeoPackage einspielen (Erfassungen bleiben, Sicherung wird angelegt):')
-    f += [CODE('python3 qfield/werkzeuge/zusatztaxa_einspielen.py <projekt.gpkg> [zusatztaxa.csv]')]
+    f += [CODE('python3 werkzeuge/zusatztaxa_einspielen.py <projekt.gpkg> [zusatztaxa.csv]')]
     return f
 
 
@@ -820,9 +819,9 @@ def k11_zurueck():
     f += H2('Abgleich PC ↔ Tablet (abgleich.py)')
     f += [P('Gleicht Artnachweise, Biotop-Zuordnungen, Fotos und eigene Synonyme ab. QGIS und QField vorher schließen.')]
     f += [CODE('''# nur Unterschiede anzeigen
-python3 qfield/werkzeuge/abgleich.py <PC-Projekt .qgs|Ordner> <Tablet-Export .zip|Ordner>
+python3 werkzeuge/abgleich.py <PC-Projekt .qgs|Ordner> <Tablet-Export .zip|Ordner>
 # fehlende Einträge auf BEIDEN Seiten ergänzen
-python3 qfield/werkzeuge/abgleich.py <PC> <Tablet> --ausfuehren''')]
+python3 werkzeuge/abgleich.py <PC> <Tablet> --ausfuehren''')]
     f += UL('PC-Projekt wird direkt aktualisiert (vorher Sicherung ' + c('*.bak') + '); fürs Tablet entsteht ' +
             c('&lt;Tablet&gt;_abgleich_&lt;Datum&gt;.zip') + ' samt aktuellem Plugin (abschalten: ' +
             c('--ohne-plugin') + ').',
@@ -846,8 +845,8 @@ python3 qfield/werkzeuge/abgleich.py <PC> <Tablet> --ausfuehren''')]
              'noch nicht systematisch getestet. Vor dem ersten echten Einsatz einmal mit einer Testerfassung '
              'ausprobieren und das Ergebnis im GoKart-Panel prüfen.')
     f += H2('Artenliste je Fläche (artenliste_export.py)')
-    f += [CODE('''python3 qfield/werkzeuge/artenliste_export.py ~/Dokumente/kobm_2026-10-27.zip
-python3 qfield/werkzeuge/artenliste_export.py <Projekt> -o ~/Gutachten/artenliste -t "Artenliste je Fläche"''')]
+    f += [CODE('''python3 werkzeuge/artenliste_export.py ~/Dokumente/kobm_2026-10-27.zip
+python3 werkzeuge/artenliste_export.py <Projekt> -o ~/Gutachten/artenliste -t "Artenliste je Fläche"''')]
     f += [P('Erzeugt eine druckbare HTML-Datei (im Browser als PDF speicherbar) und eine CSV; liest nur, braucht kein '
             'QGIS. Im Desktop-Plugin: <b>Export (CSV)</b> und <b>Artenliste je Fläche</b>.')]
     return f
@@ -938,10 +937,10 @@ def k14_fehler():
         ['iPad: kein Mikro auf der Tastatur', 'Diktierfunktion aus', 'Kapitel 13'],
     ], [50, 52, 68])
     f += H2('Tests am PC')
-    f += [CODE('''python3 qfield/test/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json
-node qfield/test/test_suche.js testdaten.json
-node qfield/test/test_biotop.js
-QT_QPA_PLATFORM=offscreen python3 qfield/test/qml_harness.py qfield_projekt_kopie''')]
+    f += [CODE('''python3 tests/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json
+node tests/test_suche.js testdaten.json
+node tests/test_biotop.js
+QT_QPA_PLATFORM=offscreen python3 tests/qml_harness.py qfield_projekt_kopie''')]
     f += BOX('achtung', 'Die qml_harness-Skripte simulieren QField und schreiben ins GeoPackage – nur mit einer Kopie.')
     f += H2('Offene Punkte')
     f += UL('QField 3.x-Fallback ungetestet; Test auf einem echten iPad steht aus (Kapitel 13).',
@@ -960,7 +959,7 @@ def kurzreferenz():
         ['2', '<b>Einrichten…</b> → Module anhaken → Flächen, Schlüssel, Anzeigefeld → Biotop-Schlüssel → OK'],
         ['3', '<b>Strg+S</b>'],
         ['4', 'QField Sync → <b>Für QField verpacken</b>'],
-        ['5', c('python3 qfield/werkzeuge/qfield_paket.py ~/QField/export/&lt;Projekt&gt;') + ' → Zip aufs Gerät'],
+        ['5', c('python3 werkzeuge/qfield_paket.py ~/QField/export/&lt;Projekt&gt;') + ' → Zip aufs Gerät'],
     ], [10, 160])
     f += H2('Im Gelände')
     f += TAB(['#', 'Aktion'], [

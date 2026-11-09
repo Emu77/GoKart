@@ -3,7 +3,7 @@
 
 Simuliert iface, qgisProject, QfLayerUtils/QfFeatureUtils (QField 4.x) mit Daten aus gokart.gpkg
 und spielt einen Erfassungsablauf durch. Aufruf:
-    QT_QPA_PLATFORM=offscreen python3 test/qml_harness.py qfield_projekt [screenshot.png]
+    QT_QPA_PLATFORM=offscreen python3 tests/qml_harness.py qfield_projekt [screenshot.png]
 """
 import re
 import sqlite3

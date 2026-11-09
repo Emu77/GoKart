@@ -1,7 +1,7 @@
 """GoKart – Artenliste je Fläche (Gutachten-Tabelle) als HTML und CSV.
 
 Reines Python ohne QGIS-Abhängigkeit, damit es sowohl vom Desktop-Plugin als auch
-vom Kommandozeilen-Werkzeug qfield/werkzeuge/artenliste_export.py genutzt werden kann.
+vom Kommandozeilen-Werkzeug werkzeuge/artenliste_export.py genutzt werden kann.
 
 Eingabe ist eine Liste von Nachweisen (dicts) mit den Schlüsseln:
     flaeche_id, flaeche_name, flaeche_m2, taxon_id, wiss, autor, deutsch, rang, eingabe, erfasst_am,

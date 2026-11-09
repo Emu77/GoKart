@@ -18,9 +18,9 @@ Quellen:
 Beispiele:
   python3 biotope_katalog_import.py --pdf Kartierschluessel_NI_2021.pdf --muster klammer --seiten 3-14 \\
       --schluessel NI --name "Kartierschlüssel für Biotoptypen in Niedersachsen" --stand "03/2021, Korr. 03/2023" \\
-      --aus ../../qgis_plugin/gokart_desktop/biotope_kataloge/NI.csv --zusammenfuehren
+      --aus ../qgis_plugin/gokart_desktop/biotope_kataloge/NI.csv --zusammenfuehren
   python3 biotope_katalog_import.py --tabelle Standardliste_SH.xlsx --code-spalte A --name-spalte B \\
-      --aus ../../qgis_plugin/gokart_desktop/biotope_kataloge/SH.csv --zusammenfuehren --vollstaendig ja
+      --aus ../qgis_plugin/gokart_desktop/biotope_kataloge/SH.csv --zusammenfuehren --vollstaendig ja
 
 Ohne --aus wird nur eine Vorschau ausgegeben. Immer die Vorschau mit dem Original vergleichen!
 """
@@ -32,7 +32,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'qgis_plugin' / 'gokart_desktop'))
 import biotope as B  # noqa: E402
 
 LEADER = re.compile(r'\s*(?:\.\s*){3,}\s*\d*\s*$|\s{3,}\d{1,3}\s*$')    # Punktlinie + Seitenzahl am Zeilenende

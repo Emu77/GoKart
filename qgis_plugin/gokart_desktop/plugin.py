@@ -115,7 +115,7 @@ def biotop_layer_laden(gpkg):
 FOTO_TABELLE = 'fotos'
 FOTO_SQL = (f'CREATE TABLE "{FOTO_TABELLE}" (fid INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, '
             'flaeche_id TEXT, taxon_id INTEGER, datei TEXT, kommentar TEXT, aufgenommen_am TEXT, '
-            'lon REAL, lat REAL)')   # wie qfield/werkzeuge/abgleich.py
+            'lon REAL, lat REAL)')   # wie werkzeuge/abgleich.py
 
 
 def fotos_einrichten(gpkg):

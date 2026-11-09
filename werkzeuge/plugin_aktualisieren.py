@@ -6,9 +6,9 @@ Projektdatei im Ordner (kobm_qfield.qgs -> kobm_qfield.qml), sonst lädt QField 
 Projektdaten (.gpkg, .qgs) bleiben unangetastet – keine Erfassung geht verloren.
 
 Aufruf (aus dem Repo-Hauptordner):
-    python3 qfield/werkzeuge/plugin_aktualisieren.py gokart_qfield                 # kopieren
-    python3 qfield/werkzeuge/plugin_aktualisieren.py ~/QField/export/kobm          # QField-Sync-Export
-    python3 qfield/werkzeuge/plugin_aktualisieren.py gokart_qfield --pruefen       # nur vergleichen, Exit 1 bei Abweichung
+    python3 werkzeuge/plugin_aktualisieren.py qfield_projekt                # kopieren
+    python3 werkzeuge/plugin_aktualisieren.py ~/QField/export/kobm          # QField-Sync-Export
+    python3 werkzeuge/plugin_aktualisieren.py qfield_projekt --pruefen      # nur vergleichen, Exit 1 bei Abweichung
 """
 import argparse
 import filecmp
@@ -16,8 +16,8 @@ import shutil
 import sys
 from pathlib import Path
 
-PLUGIN_ORDNER = Path(__file__).resolve().parents[2] / 'qfield_plugin'
-PLUGIN_QML = 'GoKart_Wohnung.qml'
+PLUGIN_ORDNER = Path(__file__).resolve().parents[1] / 'qfield_plugin'
+PLUGIN_QML = 'gokart.qml'
 PLUGIN_DATEIEN = ('gokart_suche.js', 'gokart_biotop.js', 'gokart_zusatz.js', 'gokart_icon.svg', 'gokart_foto.svg',
                   'gokart_biotop.svg')
 
@@ -83,7 +83,7 @@ def main():
     abweichend = plugin_kopieren(qgs, a.pruefen)
     if a.pruefen and abweichend:
         print(f'\n{len(abweichend)} Datei(en) weichen von qfield_plugin/ ab. '
-              f'Aktualisieren: python3 qfield/werkzeuge/{Path(__file__).name} {a.ziel}')
+              f'Aktualisieren: python3 werkzeuge/{Path(__file__).name} {a.ziel}')
         sys.exit(1)
 
 

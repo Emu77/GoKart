@@ -1,6 +1,6 @@
-// Aufruf: node qfield/test/test_biotop.js   (liest die Kataloge aus qgis_plugin/gokart_desktop/biotope_kataloge)
+// Aufruf: node tests/test_biotop.js   (liest die Kataloge aus qgis_plugin/gokart_desktop/biotope_kataloge)
 const fs = require('fs'), vm = require('vm'), path = require('path');
-const code = fs.readFileSync(path.join(__dirname, '../../qfield_plugin/gokart_biotop.js'), 'utf8').replace('.pragma library', '');
+const code = fs.readFileSync(path.join(__dirname, '../qfield_plugin/gokart_biotop.js'), 'utf8').replace('.pragma library', '');
 const S = {}; vm.createContext(S); vm.runInContext(code, S);
 
 function katalog(datei) {
@@ -9,7 +9,7 @@ function katalog(datei) {
   return zeilen.map(z => Object.fromEntries(z.split(';').map((w, i) => [kopf[i], w])))
                .map(r => ({ ...r, ebene: Number(r.ebene) || 0 }));
 }
-const ordner = path.join(__dirname, '../../qgis_plugin/gokart_desktop/biotope_kataloge');
+const ordner = path.join(__dirname, '../qgis_plugin/gokart_desktop/biotope_kataloge');
 const faelle = {
   SH: [['WMy', 'WMy'], ['wmy', 'WMy'], ['we em ypsilon', 'WMy'], ['W M Y', 'WMy'], ['Knick', 'HWy'],
        ['typischer Knick', 'HWy'], ['Erlenbruch', 'WBe'], ['Erlen Bruchwald', 'WBe'], ['Flatterbinsen', 'NSf'],

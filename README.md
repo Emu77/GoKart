@@ -43,8 +43,8 @@ Geplante Funktionen:
 
 ### Biotoptypen (Bund / Länder)
 - Kataloge je Schlüssel als CSV: `qgis_plugin/gokart_desktop/biotope_kataloge/` (aktuell: SH weitgehend, NI Wälder; historisch: SH 2003, HH 1999, BE/BB 2002, SN 2003)
-- Importer aus Original-PDF/Excel: `qfield/werkzeuge/biotope_katalog_import.py`
-- Ins Projekt: `qfield/werkzeuge/biotope_einspielen.py <Projekt> --schluessel SH` (Tabellen `biotoptypen`, `biotopzuordnung`)
+- Importer aus Original-PDF/Excel: `werkzeuge/biotope_katalog_import.py`
+- Ins Projekt: `werkzeuge/biotope_einspielen.py <Projekt> --schluessel SH` (Tabellen `biotoptypen`, `biotopzuordnung`)
 - Geltender Schlüssel = Projektvariable `gokart_biotop_schluessel` (GoKart Desktop → Einrichten…)
 - QField: dritter Knopf „Biotoptyp“ – Code oder Name tippen/diktieren (auch buchstabiert: „we em ypsilon“ → WMy)
 - GoKart Desktop: Bereich „Biotoptypen dieser Fläche“; `abgleich.py` gleicht Zuordnungen PC ↔ Tablet ab
@@ -75,16 +75,16 @@ Geplante Funktionen:
 
 ## Projektstruktur
 
-- `docs/` – Projektdokumentation
+- `docs/` – Projektdokumentation (`QField.md`: Technik, Datenmodell, Tests; Anleitung als PDF + Generator)
 - `pflanzen/app/` – Webanwendung
 - `pflanzen/GoKart_Pflanzen_Datenbank/` – SQLite-Datenbank
 - `pflanzen/originaldaten/` – Ausgangsdaten
 - `pflanzen/sprachtest.py` – Test der Spracherkennung
-- `qfield_plugin/` – QField-Projekt-Plugin (`GoKart_Wohnung.qml`, `gokart_suche.js`, `gokart_biotop.js`, `gokart_zusatz.js`; Arten, Punktaufnahmen, Zusatzangaben, Fotos, Biotoptypen)
-- `qfield/werkzeuge/qfield_paket.py` – QField-Sync-Export + Plugin als Zip fürs Tablet
-- `qfield/werkzeuge/` – Projekt-Build (GeoPackage + QGIS-Projekt), Namensaufbereitung
-- `qfield/test/` – Suchtest (Node) und QField-Simulation (PySide6)
-- `gokart_qfield/` – fertiges QField-Projekt mit eigenen Flächen (`gokart.gpkg` nicht im Repo, Plugin nur Kopie – siehe dortige README)
+- `qfield_plugin/` – QField-Projekt-Plugin, einzige Quelle (`gokart.qml`, `gokart_suche.js`, `gokart_biotop.js`, `gokart_zusatz.js`; Arten, Punktaufnahmen, Zusatzangaben, Fotos, Biotoptypen)
+- `qgis_plugin/gokart_desktop/` – QGIS-Desktop-Plugin (Einrichten, Erfassen am PC, Export, Biotop-Kataloge)
+- `werkzeuge/` – Projekt bauen, Abgleich PC ↔ Tablet, Zip fürs Tablet, Plugin kopieren, Artenliste, Biotope
+- `tests/` – Suchtests (Node) und QField-Simulationen (PySide6), siehe `docs/QField.md`
+- `qfield_projekt/` – *nicht im Repo*: lokal gebautes Projekt
 
 ## Anleitung
 

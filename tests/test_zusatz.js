@@ -1,6 +1,6 @@
-// Aufruf: node qfield/test/test_zusatz.js   – Zusatzangaben aus Spracheingabe (gokart_zusatz.js)
+// Aufruf: node tests/test_zusatz.js   – Zusatzangaben aus Spracheingabe (gokart_zusatz.js)
 const fs = require('fs'), vm = require('vm'), path = require('path');
-const code = fs.readFileSync(path.join(__dirname, '../../qfield_plugin/gokart_zusatz.js'), 'utf8').replace('.pragma library', '');
+const code = fs.readFileSync(path.join(__dirname, '../qfield_plugin/gokart_zusatz.js'), 'utf8').replace('.pragma library', '');
 const Z = {}; vm.createContext(Z); vm.runInContext(code, Z);
 
 const faelle = [

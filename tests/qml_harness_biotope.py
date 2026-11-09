@@ -4,8 +4,8 @@
 Simuliert iface, qgisProject, QfLayerUtils/QfFeatureUtils/QfExpressionContextUtils (QField 4.x) mit Daten aus
 gokart.gpkg (inkl. biotoptypen/biotopzuordnung, Projektvariable gokart_biotop_schluessel=SH) und spielt
 Suchen, Haupt-/Nebenbiotop setzen, Rolle wechseln und Löschen durch. Aufruf:
-    QT_QPA_PLATFORM=offscreen python3 test/qml_harness_biotope.py <projekt> [screenshot.png]
-(Projektordner mit gokart.qml = qfield_plugin/GoKart_Wohnung.qml, gokart_biotop.js, gokart.gpkg mit Fläche K6-001,
+    QT_QPA_PLATFORM=offscreen python3 tests/qml_harness_biotope.py <projekt> [screenshot.png]
+(Projektordner mit gokart.qml = qfield_plugin/gokart.qml, gokart_biotop.js, gokart.gpkg mit Fläche K6-001,
  vorher biotope_einspielen.py ausführen)
 """
 import re

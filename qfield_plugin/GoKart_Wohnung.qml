@@ -74,6 +74,8 @@ Item {
     property var letzterNachweis: null   // zuletzt gespeicherter Eintrag – Ziel der Schnellleiste
     property string fadenkreuz: ''       // '' | 'neu' | 'verschieben' – Punkt per Fadenkreuz auf der Karte
     property string fadenkreuzInfo: ''   // Koordinate + Fläche unter dem Fadenkreuz (Anzeige)
+    property string punktStatus: ''      // Ergebnis der letzten Punkt-Aktion (bleibt im Dialog stehen)
+    property bool punktStatusFehler: false
 
     readonly property color gruen: '#167d50'
     readonly property color gruenHell: '#e6f6eb'
@@ -439,8 +441,8 @@ Item {
             var id = attr(f, 'punkt_id');
             if (id === null) return;
             var xy = punktXY(f);
-            var h = attr(f, 'gps_genauigkeit');
-            liste.push({ id: String(id), am: attr(f, 'erfasst_am') || '', hacc: h === null ? null : Number(h),
+            var h = attr(f, 'gps_genauigkeit');   // NULL kommt in QML bei Zahlenfeldern als 0 an
+            liste.push({ id: String(id), am: attr(f, 'erfasst_am') || '', hacc: (h === null || !(Number(h) > 0)) ? null : Number(h),
                          quelle: attr(f, 'pos_quelle') || '', x: xy ? xy.x : null, y: xy ? xy.y : null });
         });
         liste.sort(function (a, b) { return String(b.am).localeCompare(String(a.am)); });
@@ -533,7 +535,9 @@ Item {
             if (hoehe !== null) setze(f, pl, 'hoehe', Math.round(hoehe * 10) / 10);
             return lu.addFeature(pl, f);
         });
-        if (!ok) { meldung('Punkt nicht gespeichert – Details unten im Dialog.'); return; }
+        punktStatus = ok ? '✓ Neuer Punkt ' + id + ' (' + quelle + ')' : '✗ Punkt nicht gespeichert: ' + diagnose;
+        punktStatusFehler = !ok;
+        if (!ok) { meldung('Punkt nicht gespeichert – Details im Dialog.'); return; }
         punkteLaden();
         punktWaehlen(id);
         meldung('📍 Neue Aufnahme ' + punktName(id) + (quelle === 'gps' ? '' : ' – Fadenkreuz'));
@@ -588,9 +592,9 @@ Item {
         var xy = fk ? inLayerKbs(fk.x, fk.y, fk.crs) : null;
         var modus = fadenkreuz;
         fadenkreuz = '';
-        dialog.open();
         if (modus === 'verschieben') punktVerschieben(xy);
         else punktSpeichern(xy, 'manuell', null, null);
+        dialog.open();
     }
 
     function fadenkreuzAbbrechen() {
@@ -609,18 +613,29 @@ Item {
         offeneAenderungenSpeichern(pl);
         var namen = pl.fields.names;
         var werte = {};
+        // Zahlenfelder (gps_genauigkeit, hoehe) nicht kopieren: NULL käme als 0 an
         for (var i = 0; i < namen.length; i++)
-            if (['fid', 'geom', 'geometry'].indexOf(namen[i]) < 0) werte[namen[i]] = attr(alt, namen[i]);
+            if (['fid', 'geom', 'geometry', 'gps_genauigkeit', 'hoehe'].indexOf(namen[i]) < 0) werte[namen[i]] = attr(alt, namen[i]);
+        var hoeheAlt = attr(alt, 'hoehe');
+        if (hoeheAlt !== null && Number(hoeheAlt) !== 0) werte.hoehe = Number(hoeheAlt);
         var altId = alt.id;
+        var schritte = 'alter fid ' + altId;
         var ok = inBearbeitung(pl, function () {
+            // erst den alten Punkt löschen (punkt_id ist eindeutig), dann den neuen anlegen – beides im selben Puffer
+            var weg = lu.deleteFeature(qgisProject, pl, altId, false);
+            schritte += ', gelöscht=' + weg;
+            if (!weg) return false;
             var f = fu.createFeature(pl, gu.createGeometryFromWkt('POINT(' + xy.x + ' ' + xy.y + ')'));
             for (var n in werte) if (werte[n] !== null) setze(f, pl, n, werte[n]);
             setze(f, pl, 'pos_quelle', 'korrigiert');
-            setze(f, pl, 'gps_genauigkeit', null);   // von Hand gesetzt: GPS-Genauigkeit gilt nicht mehr
             setze(f, pl, 'geaendert_am', jetzt());
-            return lu.addFeature(pl, f) && lu.deleteFeature(qgisProject, pl, altId, false);
+            var neu = lu.addFeature(pl, f);
+            schritte += ', neu angelegt=' + neu;
+            return neu;
         });
-        meldung(ok ? '📍 ' + punktName(aktiverPunkt) + ' verschoben.' : 'Verschieben fehlgeschlagen – Details unten im Dialog.');
+        punktStatus = (ok ? '✓ Verschoben: ' : '✗ Verschieben fehlgeschlagen: ') + schritte + ' · ' + diagnose;
+        punktStatusFehler = !ok;
+        meldung(ok ? '📍 ' + punktName(aktiverPunkt) + ' verschoben.' : 'Verschieben fehlgeschlagen – Details im Dialog.');
         punkteLaden();
         gpsAktualisieren();
     }
@@ -1441,7 +1456,7 @@ Item {
                 spacing: 4
                 ComboBox {
                     Layout.fillWidth: true
-                    model: plugin.punkte.map(function (p) { return plugin.punktName(p.id) + (p.quelle === 'manuell' ? ' · Karte' : ''); })
+                    model: plugin.punkte.map(function (p) { return plugin.punktName(p.id) + (p.quelle === 'manuell' ? ' · Fadenkreuz' : (p.quelle === 'korrigiert' ? ' · verschoben' : '')); })
                     currentIndex: {
                         for (var i = 0; i < plugin.punkte.length; i++) if (plugin.punkte[i].id === plugin.aktiverPunkt) return i;
                         return -1;
@@ -1467,7 +1482,7 @@ Item {
                     }
                     Button {
                         objectName: 'gokartFadenkreuzKnopf'
-                        text: '⌖ Fadenkreuz'
+                        text: '+ Fadenkreuz'
                         onClicked: plugin.fadenkreuzStarten('neu')
                     }
                 }
@@ -1477,6 +1492,14 @@ Item {
                     text: 'Punkt verschieben (Fadenkreuz)'
                     flat: true
                     onClicked: plugin.fadenkreuzStarten('verschieben')
+                }
+                Label {
+                    objectName: 'gokartPunktStatus'
+                    Layout.fillWidth: true
+                    visible: plugin.punktStatus !== ''
+                    text: plugin.punktStatus
+                    wrapMode: Text.Wrap; font.pixelSize: 11
+                    color: plugin.punktStatusFehler ? '#b3261e' : '#53645a'
                 }
                 Label {
                     Layout.fillWidth: true

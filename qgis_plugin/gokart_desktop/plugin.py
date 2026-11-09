@@ -25,14 +25,16 @@ from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QSettings, QTimer, QSize, 
 from qgis.PyQt.QtGui import QDesktopServices, QIcon, QImage, QPixmap
 from qgis.PyQt.QtWidgets import (QAction, QComboBox, QDockWidget, QFileDialog, QScrollArea, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QCheckBox,
-    QVBoxLayout, QWidget, QDialog, QDialogButtonBox, QFormLayout)
+    QVBoxLayout, QWidget, QDialog, QDialogButtonBox, QFormLayout, QSpinBox)
 from qgis.core import (QgsCoordinateTransform, QgsFeature, QgsGeometry,
     QgsPointXY, QgsProject, QgsMapLayerType, QgsExpression, QgsFeatureRequest,
-    QgsRelation, QgsVectorLayer, QgsExpressionContextUtils as ECU)
+    QgsRelation, QgsVectorLayer, QgsField, QgsSpatialIndex, QgsExpressionContextUtils as ECU)
+from qgis.PyQt.QtCore import QVariant
 from qgis.gui import QgsMapLayerComboBox, QgsFieldComboBox
 
 from . import biotope as B
 from . import module as M
+from . import punkte as P
 
 try:  # QGIS >= 3.34
     from qgis.core import Qgis
@@ -50,6 +52,7 @@ VAR_OBS_FK = 'gokart_nachweis_fk'           # Fremdschlüssel in den Artnachweis
 VAR_RELATION = 'gokart_relation'
 RELATION_ID = 'gokart_flaeche_nachweise'
 BIOTOP_RELATION_ID = 'gokart_flaeche_biotope'
+PUNKT_RELATION_ID = 'gokart_punkt_nachweise'
 LABEL_FIELDS = ('Raum', 'raum', 'name', 'Name', 'bezeichnung', 'Bezeichnung')
 
 
@@ -139,6 +142,76 @@ def fotos_einrichten(gpkg):
     return True
 
 
+def nachweisfelder_ergaenzen(nl):
+    """Spalten punkt_id, deckung, anzahl, phaenologie im Artnachweis-Layer anlegen (über den Provider,
+    damit der geladene Layer sie sofort kennt). Gibt die neu angelegten Namen zurück."""
+    fehlend = [n for n, _ in P.NACHWEIS_SPALTEN if nl.fields().indexFromName(n) < 0]
+    if fehlend:
+        if not nl.dataProvider().addAttributes([QgsField(n, QVariant.String) for n in fehlend]):
+            raise RuntimeError('Felder konnten nicht angelegt werden: ' + ', '.join(fehlend))
+        nl.updateFields()
+    return fehlend
+
+
+def punkte_einrichten(gpkg, crs):
+    """Tabelle aufnahme_punkte anlegen (falls fehlend) und als Layer ins Projekt holen. Gibt den Layer zurück."""
+    P.tabelle_anlegen(gpkg, crs)
+    p = QgsProject.instance()
+    vorhanden = p.mapLayersByName(P.T_PUNKTE)
+    if vorhanden:
+        return vorhanden[0]
+    lyr = QgsVectorLayer(f'{gpkg}|layername={P.T_PUNKTE}', P.T_PUNKTE, 'ogr')
+    if not lyr.isValid():
+        return None
+    lyr.setDisplayExpression('"punkt_id"')
+    p.addMapLayer(lyr)
+    return lyr
+
+
+def punkte_zuordnen(pl, fl, key, alle=False):
+    """Setzt aufnahme_punkte.flaeche_id per Punkt-in-Fläche (kleinste enthaltende Fläche).
+    alle=False: nur Punkte ohne Zuordnung. Liefert (gesetzt, am_rand, ausserhalb, [Randpunkte])."""
+    i_fl = pl.fields().indexFromName('flaeche_id')
+    i_ge = pl.fields().indexFromName('geaendert_am')
+    if i_fl < 0:
+        raise RuntimeError('Feld flaeche_id fehlt im Punkt-Layer')
+    tr = QgsCoordinateTransform(pl.crs(), fl.crs(), QgsProject.instance())
+    index = QgsSpatialIndex(fl.getFeatures())
+    flaechen = {f.id(): f for f in fl.getFeatures()}
+    jetzt = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    gesetzt, ausserhalb, rand = 0, 0, []
+    aenderungen = {}
+    for pt in pl.getFeatures():
+        if not alle and not is_empty(pt['flaeche_id']):
+            continue
+        if not pt.hasGeometry():
+            continue
+        g = QgsGeometry(pt.geometry())
+        g.transform(tr)
+        kandidaten = [flaechen[i] for i in index.intersects(g.boundingBox())]
+        treffer = [f for f in kandidaten if f.geometry().contains(g)]
+        if not treffer:
+            ausserhalb += 1
+            continue
+        f = min(treffer, key=lambda x: x.geometry().area())
+        wert = f[key]
+        if is_empty(wert) or str(wert) == str(pt['flaeche_id']):
+            continue
+        aenderungen[pt.id()] = {i_fl: str(wert)}
+        if i_ge >= 0:
+            aenderungen[pt.id()][i_ge] = jetzt
+        gesetzt += 1
+        genau = pt['gps_genauigkeit']
+        abstand = QgsGeometry(f.geometry().constGet().boundary()).distance(g)   # in Einheiten der Flächen
+        if not is_empty(genau) and abstand < float(genau):
+            rand.append(f'{pt["punkt_id"]} → {wert} ({abstand:.0f} m vom Rand, ±{float(genau):.0f} m)')
+    if aenderungen:
+        if not pl.dataProvider().changeAttributeValues(aenderungen):
+            raise RuntimeError('Zuordnung konnte nicht gespeichert werden')
+        pl.triggerRepaint()
+    return gesetzt, len(rand), ausserhalb, rand
+
+
 class GoKartSetupDialog(QDialog):
     """Legt fest, über welche Felder Fläche und Artnachweis verknüpft sind."""
 
@@ -173,6 +246,25 @@ class GoKartSetupDialog(QDialog):
                                       'in die GeoPackage der Artnachweise übernehmen und als Layer laden')
         self.biotop_info = QLabel()
         self.biotop_info.setWordWrap(True)
+        # Zusatzangaben je Art (gokart_zusatz) und Punktaufnahmen (gokart_punkt_*)
+        self.zusatz = {z: QCheckBox(name) for z, (name, _w) in P.ZUSATZ.items()}
+        zusatz_zeile = QHBoxLayout()
+        for cb in self.zusatz.values():
+            zusatz_zeile.addWidget(cb)
+        zusatz_zeile.addStretch(1)
+        self.zusatz_titel = QLabel('Zusatzangaben')
+        self.punkt_genau = QSpinBox()
+        self.punkt_genau.setRange(1, 100)
+        self.punkt_genau.setSuffix(' m')
+        self.punkt_genau.setToolTip('QField warnt, wenn die GPS-Genauigkeit schlechter ist (zweites Antippen übernimmt trotzdem)')
+        self.punkt_radius = QSpinBox()
+        self.punkt_radius.setRange(5, 1000)
+        self.punkt_radius.setSuffix(' m')
+        self.punkt_radius.setToolTip('QField fragt „neue Aufnahme?“, wenn man weiter vom aktiven Punkt entfernt ist')
+        self.punkt_zuordnen = QPushButton('Punkte Flächen zuordnen')
+        self.punkt_zuordnen.setToolTip('Setzt bei Punktaufnahmen ohne Fläche die flaeche_id der Fläche, in der sie liegen')
+        self.punkt_info = QLabel()
+        self.punkt_info.setWordWrap(True)
 
         form.addRow(QLabel('<b>Erfassen</b>'))
         form.addRow(mod_zeile)
@@ -184,8 +276,15 @@ class GoKartSetupDialog(QDialog):
         form.addRow(self.obs_titel)
         form.addRow('Layer', self.obs_layer)
         form.addRow('Verweis auf Fläche', self.obs_fk)
+        form.addRow(self.zusatz_titel, zusatz_zeile)
         form.addRow(self.make_relation)
         form.addRow(self.info)
+        self.punkt_titel = QLabel('<b>Punktaufnahmen (GPS)</b>')
+        form.addRow(self.punkt_titel)
+        form.addRow('Warnung ab Genauigkeit', self.punkt_genau)
+        form.addRow('„Neue Aufnahme?“ ab', self.punkt_radius)
+        form.addRow(self.punkt_zuordnen)
+        form.addRow(self.punkt_info)
         self.biotop_titel = QLabel('<b>Biotoptypen</b>')
         form.addRow(self.biotop_titel)
         form.addRow('Schlüssel', self.biotop_key)
@@ -202,6 +301,7 @@ class GoKartSetupDialog(QDialog):
         self.obs_fk.fieldChanged.connect(self.check)
         self.obs_layer.layerChanged.connect(lambda _l: self.fill_biotop_keys())
         self.biotop_import.clicked.connect(self.import_catalogs)
+        self.punkt_zuordnen.clicked.connect(self.zuordnen)
         for cb in self.mod.values():
             cb.toggled.connect(self.module_umschalten)
         self.prefill()
@@ -221,12 +321,33 @@ class GoKartSetupDialog(QDialog):
         self.make_relation.setEnabled(arten or biotope)
         for w in (self.biotop_key, self.biotop_import, self.biotop_info):
             w.setEnabled(biotope and (w is not self.biotop_import or bool(self.obs_gpkg())))
+        for cb in list(self.zusatz.values()) + [self.zusatz_titel]:
+            cb.setEnabled(arten)
+        punkte = M.PUNKTE in m
+        for w in (self.punkt_genau, self.punkt_radius, self.punkt_info):
+            w.setEnabled(punkte)
+        self.punkt_zuordnen.setEnabled(punkte and bool(QgsProject.instance().mapLayersByName(P.T_PUNKTE)))
         self.check()
 
     def prefill(self):
         aktiv = M.lesen(project_var(M.VAR_MODULE))
         for m, cb in self.mod.items():
             cb.setChecked(m in aktiv)
+        zusatz = P.zusatz_lesen(project_var(P.VAR_ZUSATZ))
+        for z, cb in self.zusatz.items():
+            cb.setChecked(z in zusatz)
+
+        def zahl(name, standard):
+            try:
+                return int(float(str(project_var(name)).replace(',', '.')))
+            except (TypeError, ValueError):
+                return standard
+        self.punkt_genau.setValue(zahl(P.VAR_GENAUIGKEIT, P.STANDARD_GENAUIGKEIT))
+        self.punkt_radius.setValue(zahl(P.VAR_RADIUS, P.STANDARD_RADIUS))
+        pl = QgsProject.instance().mapLayersByName(P.T_PUNKTE)
+        self.punkt_info.setText(f'{pl[0].featureCount()} Punktaufnahmen im Projekt.' if pl else
+                                'Der Layer aufnahme_punkte wird beim Übernehmen in der GeoPackage der '
+                                'Artnachweise angelegt (Koordinatensystem wie die Flächen).')
         fl = find_layer(project_var(VAR_AREA_LAYER))
         nl = find_layer(project_var(VAR_OBS_LAYER)) or find_layer('artnachweise')
         if fl is not None:
@@ -286,6 +407,28 @@ class GoKartSetupDialog(QDialog):
         self.biotop_info.setText('Eingespielt: ' + ', '.join(
             f'{s} ({n}{"" if v else ", unvollständig"})' for s, (n, v, _) in sorted(erg.items())))
 
+    def zuordnen(self):
+        pl = next(iter(QgsProject.instance().mapLayersByName(P.T_PUNKTE)), None)
+        fl, key = self.area_layer.currentLayer(), self.area_key.currentField()
+        if pl is None or fl is None or not key:
+            QMessageBox.warning(self, 'GoKart', 'Punkt-Layer, Flächen-Layer und Schlüsselfeld werden gebraucht.')
+            return
+        alle = QMessageBox.question(
+            self, 'GoKart', 'Auch Punkte neu zuordnen, die schon eine Fläche haben?',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
+        try:
+            gesetzt, n_rand, ausserhalb, rand = punkte_zuordnen(pl, fl, key, alle)
+        except Exception as e:
+            QMessageBox.warning(self, 'GoKart', f'Zuordnung fehlgeschlagen: {e}')
+            return
+        text = f'{gesetzt} Punkte zugeordnet, {ausserhalb} liegen in keiner Fläche.'
+        if rand:
+            text += f'\n{n_rand} liegen näher am Rand als ihre GPS-Genauigkeit – bitte prüfen:\n' + '\n'.join(rand[:15])
+            if len(rand) > 15:
+                text += f'\n… und {len(rand) - 15} weitere'
+        self.punkt_info.setText(text.split('\n')[0])
+        QMessageBox.information(self, 'GoKart', text)
+
     def on_area_layer(self, layer):
         self.area_key.setLayer(layer)
         self.area_label.setLayer(layer)
@@ -326,9 +469,24 @@ class GoKartSetupDialog(QDialog):
             QMessageBox.warning(self, 'GoKart', 'Bitte beide Layer und Felder wählen.')
             return
         gpkg = self.obs_gpkg()
-        if (mods & {M.FOTOS, M.BIOTOPE}) and not gpkg:
-            QMessageBox.warning(self, 'GoKart', 'Fotos und Biotoptypen brauchen eine GeoPackage – '
+        if (mods & {M.FOTOS, M.BIOTOPE, M.PUNKTE}) and not gpkg:
+            QMessageBox.warning(self, 'GoKart', 'Fotos, Biotoptypen und Punktaufnahmen brauchen eine GeoPackage – '
                                                 'der Artnachweis-Layer liegt in keiner.')
+            return
+        if M.PUNKTE in mods and not arten:
+            QMessageBox.warning(self, 'GoKart', 'Punktaufnahmen brauchen die Erfassung „Pflanzenarten“.')
+            return
+        zusatz = [z for z, cb in self.zusatz.items() if cb.isChecked()] if arten else []
+        pl = None
+        try:
+            if arten and (zusatz or M.PUNKTE in mods):
+                nachweisfelder_ergaenzen(nl)
+            if M.PUNKTE in mods:
+                pl = punkte_einrichten(gpkg, fl.crs().authid())
+                if pl is None:
+                    raise RuntimeError('Layer "aufnahme_punkte" ungültig')
+        except Exception as e:
+            QMessageBox.warning(self, 'GoKart', f'Punktaufnahmen/Zusatzangaben konnten nicht eingerichtet werden: {e}')
             return
         if M.FOTOS in mods:
             try:
@@ -347,6 +505,12 @@ class GoKartSetupDialog(QDialog):
         ECU.setProjectVariable(p, VAR_OBS_LAYER, nl.id())
         ECU.setProjectVariable(p, VAR_OBS_FK, fk)
         ECU.setProjectVariable(p, B.VAR_SCHLUESSEL, self.biotop_key.currentData() or '')
+        ECU.setProjectVariable(p, P.VAR_ZUSATZ, ','.join(zusatz))
+        if M.PUNKTE in mods:
+            ECU.setProjectVariable(p, P.VAR_GENAUIGKEIT, str(self.punkt_genau.value()))
+            ECU.setProjectVariable(p, P.VAR_RADIUS, str(self.punkt_radius.value()))
+            if self.make_relation.isChecked():
+                self.write_punkt_relation(pl, nl)
         if arten and self.make_relation.isChecked() and not self.write_relation(fl, key, nl, fk):
             return
         if M.BIOTOPE in mods and self.make_relation.isChecked():
@@ -383,6 +547,19 @@ class GoKartSetupDialog(QDialog):
         rm.addRelation(rel)
         ECU.setProjectVariable(QgsProject.instance(), VAR_RELATION, RELATION_ID)
         return True
+
+    def write_punkt_relation(self, pl, nl):
+        """Punktaufnahme 1:n Artnachweise – QGIS/QField zeigen die Arten im Punktformular."""
+        rm = QgsProject.instance().relationManager()
+        rel = QgsRelation()
+        rel.setId(PUNKT_RELATION_ID)
+        rel.setName('Punktaufnahme → Artnachweise')
+        rel.setReferencedLayer(pl.id())
+        rel.setReferencingLayer(nl.id())
+        rel.addFieldPair('punkt_id', 'punkt_id')
+        if rel.isValid():
+            rm.removeRelation(PUNKT_RELATION_ID)
+            rm.addRelation(rel)
 
     def write_biotop_relation(self, fl, key):
         """Fläche 1:n Biotop-Zuordnungen – damit QField sie im Flächenformular zeigt."""
@@ -1300,7 +1477,7 @@ class GoKartDock(QDockWidget):
 
     def export_artenliste(self):
         """Artenliste je Fläche (HTML + CSV) über alle Flächen – Logik in artenliste.py."""
-        from .artenliste import csv_schreiben, html_schreiben
+        from .artenliste import csv_schreiben, html_schreiben, punkt_ort
         layer = self.obs_layer()
         if not layer:
             self.message('Layer "artnachweise" fehlt.')
@@ -1323,16 +1500,28 @@ class GoKartDock(QDockWidget):
                 fotos_je_flaeche.setdefault(val(f, 'flaeche_id'), []).append({
                     'datei': val(f, 'datei'), 'kommentar': val(f, 'kommentar'), 'am': val(f, 'aufgenommen_am'),
                     'src': self.vorschau_uri(self.foto_pfad(val(f, 'datei')))})
+        punkte = {}
+        pl = self.layer(P.T_PUNKTE)
+        if pl is not None:
+            for f in pl.getFeatures():
+                punkte[val(f, 'punkt_id')] = {'flaeche_id': val(f, 'flaeche_id'), 'erfasst_am': val(f, 'erfasst_am'),
+                                              'gps_genauigkeit': val(f, 'gps_genauigkeit')}
+        namen = layer.fields().names()
         nachweise = []
         for f in layer.getFeatures():
             fid = val(f, fk)
-            name, groesse = flaechen.get(fid, ('', None))
+            pid = val(f, 'punkt_id') if 'punkt_id' in namen else None
+            pname = ''
+            if is_empty(fid) and not is_empty(pid):
+                fid, pname = punkt_ort(pid, punkte.get(pid))
+            name, groesse = flaechen.get(fid, (pname or '', None))
             autor, rang = taxa.get(val(f, 'taxon_id'), ('', ''))
             nachweise.append({'flaeche_id': fid, 'flaeche_name': name, 'flaeche_m2': groesse,
                               'taxon_id': val(f, 'taxon_id'), 'wiss': val(f, 'wissenschaftlicher_name'),
                               'autor': autor, 'deutsch': val(f, 'deutscher_name'), 'rang': rang,
                               'eingabe': val(f, 'original_eingabe'), 'erfasst_am': val(f, 'erfasst_am'),
-                              'bemerkung': val(f, 'bemerkung')})
+                              'bemerkung': val(f, 'bemerkung'), 'punkt_id': pid,
+                              **{z: (val(f, z) if z in namen else None) for z in P.ZUSATZ}})
         try:
             ziel = Path(filename).with_suffix('.html')
             projekt = QgsProject.instance().title() or Path(QgsProject.instance().fileName()).stem

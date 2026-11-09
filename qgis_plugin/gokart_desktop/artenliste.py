@@ -5,7 +5,9 @@ vom Kommandozeilen-Werkzeug qfield/werkzeuge/artenliste_export.py genutzt werden
 
 Eingabe ist eine Liste von Nachweisen (dicts) mit den Schlüsseln:
     flaeche_id, flaeche_name, flaeche_m2, taxon_id, wiss, autor, deutsch, rang, eingabe, erfasst_am,
-    optional bemerkung.
+    optional bemerkung, deckung, anzahl, phaenologie, punkt_id.
+Nachweise an Punktaufnahmen (ohne Fläche): flaeche_id/flaeche_name mit punkt_ort() bilden – der zugeordnete
+Flächen-ID (nach „Punkte Flächen zuordnen“) oder „Punkt <punkt_id>“.
 Standortfotos kommen getrennt: fotos_je_flaeche = {flaeche_id: [{datei, kommentar, am, src}]}
 (src = Bild-URL/data:-URI für die Vorschau), flaechen_info = {flaeche_id: (name, m2)}.
 Fehlende Werte dürfen None oder '' sein.
@@ -98,11 +100,39 @@ def _wiss_html(a):
     return s
 
 
+def punkt_ort(punkt_id, punkt=None):
+    """(flaeche_id, flaeche_name) für einen Nachweis an einer Punktaufnahme.
+    punkt: dict der Zeile aus aufnahme_punkte (flaeche_id, erfasst_am, gps_genauigkeit) oder None."""
+    punkt = punkt or {}
+    if _txt(punkt.get('flaeche_id')):
+        return _txt(punkt.get('flaeche_id')), None
+    teile = [_datum(punkt.get('erfasst_am')) if punkt.get('erfasst_am') else '']
+    if punkt.get('gps_genauigkeit') not in (None, ''):
+        teile.append(f'±{float(punkt["gps_genauigkeit"]):.0f} m')
+    name = 'Punktaufnahme' + (' ' + ', '.join(t for t in teile if t) if any(teile) else '')
+    return f'Punkt {punkt_id}', name
+
+
+def zusatz_text(a):
+    """'Deckung 2a · blühend · Anzahl 6–25' – leer, wenn keine Zusatzangaben."""
+    teile = []
+    if _txt(a.get('deckung')):
+        teile.append('Deckung ' + _txt(a.get('deckung')))
+    if _txt(a.get('phaenologie')):
+        teile.append(_txt(a.get('phaenologie')))
+    if _txt(a.get('anzahl')):
+        teile.append('Anzahl ' + _txt(a.get('anzahl')))
+    return ' · '.join(teile)
+
+
 def _zusatz_html(a):
-    """Bemerkung unter einer Artzeile."""
+    """Zusatzangaben und Bemerkung unter einer Artzeile."""
+    s = ''
+    if zusatz_text(a):
+        s += f'<div class="bem">{html.escape(zusatz_text(a))}</div>'
     if _txt(a.get('bemerkung')):
-        return f'<div class="bem">💬 {html.escape(_txt(a.get("bemerkung")))}</div>'
-    return ''
+        s += f'<div class="bem">💬 {html.escape(_txt(a.get("bemerkung")))}</div>'
+    return s
 
 
 def _fotos_html(fotos):
@@ -194,9 +224,10 @@ def csv_schreiben(pfad, nachweise):
     with open(pfad, 'w', newline='', encoding='utf-8-sig') as fh:
         w = csv.writer(fh, delimiter=';')
         w.writerow(['Flächen-ID', 'Fläche', 'Fläche m²', 'Nr.', 'Wissenschaftlicher Name', 'Autor',
-                    'Deutscher Name', 'Rang', 'Erfasst am', 'Bemerkung'])
+                    'Deutscher Name', 'Rang', 'Erfasst am', 'Deckung', 'Anzahl', 'Phänologie', 'Bemerkung'])
         for fid, f in gruppen.items():
             for i, a in enumerate(f['arten'], 1):
                 w.writerow([fid, f['name'], _txt(f['m2']).replace('.', ','), i, _txt(a.get('wiss')), _autor(a),
                             _txt(a.get('deutsch')), _txt(a.get('rang')),
-                            _txt(a.get('erfasst_am')).replace('T', ' '), _txt(a.get('bemerkung'))])
+                            _txt(a.get('erfasst_am')).replace('T', ' '), _txt(a.get('deckung')), _txt(a.get('anzahl')),
+                            _txt(a.get('phaenologie')), _txt(a.get('bemerkung'))])

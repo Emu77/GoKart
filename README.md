@@ -15,6 +15,8 @@ Geplante Funktionen:
 - Automatische Vorschläge bei der Artnamensuche
 - Eigene Synonyme für Pflanzenarten
 - Zuordnung von Pflanzenarten zu Kartierungsflächen
+- Punktaufnahmen: Arten an GPS-Punkten erfassen, ganz ohne Flächen-Shape
+- Zusatzangaben je Art (Deckung, Anzahl, Phänologie) per Sprache oder Schnellleiste
 - Biotoptyp je Fläche (Haupt-/Nebenbiotop) nach Bundes- oder Landesschlüssel
 - Integration in QGIS und QField
 - Nutzung auf Android, iOS und Desktop
@@ -52,6 +54,20 @@ Geplante Funktionen:
 - Setzen: GoKart Desktop → Einrichten… → „Erfassen“ (Pflanzenarten / Standortfotos / Biotoptypen) oder `build_gokart_projekt.py --module arten,fotos,biotope`
 - QField zeigt nur die Knöpfe der gewählten Module; das Desktop-Dock blendet die übrigen Bereiche aus
 
+### Punktaufnahmen (GPS) und Zusatzangaben (ab QField-Plugin 0.7)
+- Modul `punkte` in `gokart_module`: Arten an GPS-Punkten statt auf Flächen; Layer `aufnahme_punkte`
+  (`punkt_id`, `gps_genauigkeit`, `pos_quelle` gps/manuell/korrigiert, optional `flaeche_id`, `biotoptyp`)
+- Artnachweis verweist dann über `punkt_id` statt `flaeche_id` auf den Ort (genau eins von beiden)
+- QField: Umschalter „Fläche / Punkt (GPS)“ → „Neue Aufnahme hier“ (Warnung ab `gokart_punkt_genauigkeit`,
+  Standard 10 m; zweites Antippen übernimmt trotzdem) oder „⌖ Fadenkreuz“ (Punkt von Hand auf der Karte setzen,
+  rastet bei aktivem Einrasten auf Flächenkanten ein); „Punkt verschieben“ korrigiert die Lage; Abstandshinweis
+  ab `gokart_punkt_radius` (Standard 25 m)
+- Zusatzangaben `deckung` (Braun-Blanquet), `anzahl`, `phaenologie`: im Diktat nach dem Namen
+  („Calluna, Deckung drei, blühend“) und über eine Schnellleiste nach dem Speichern; welche, legt `gokart_zusatz` fest
+- Einrichten: `build_gokart_projekt.py --module arten,punkte --zusatzangaben deckung,phaenologie`
+  oder GoKart Desktop → Einrichten… (dort auch „Punkte Flächen zuordnen“); ältere Projekte ergänzt `abgleich.py`
+- Konzept: `docs/Konzept_Punktaufnahmen.md`
+
 ### Datenhaltung
 - SQLite-Datenbank
 - JavaScript-Pflanzendaten
@@ -64,7 +80,7 @@ Geplante Funktionen:
 - `pflanzen/GoKart_Pflanzen_Datenbank/` – SQLite-Datenbank
 - `pflanzen/originaldaten/` – Ausgangsdaten
 - `pflanzen/sprachtest.py` – Test der Spracherkennung
-- `qfield_plugin/` – QField-Projekt-Plugin (`GoKart_Wohnung.qml`, `gokart_suche.js`, `gokart_biotop.js`; Arten, Fotos, Biotoptypen)
+- `qfield_plugin/` – QField-Projekt-Plugin (`GoKart_Wohnung.qml`, `gokart_suche.js`, `gokart_biotop.js`, `gokart_zusatz.js`; Arten, Punktaufnahmen, Zusatzangaben, Fotos, Biotoptypen)
 - `qfield/werkzeuge/qfield_paket.py` – QField-Sync-Export + Plugin als Zip fürs Tablet
 - `qfield/werkzeuge/` – Projekt-Build (GeoPackage + QGIS-Projekt), Namensaufbereitung
 - `qfield/test/` – Suchtest (Node) und QField-Simulation (PySide6)

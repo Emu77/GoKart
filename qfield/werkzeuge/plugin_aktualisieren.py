@@ -18,7 +18,8 @@ from pathlib import Path
 
 PLUGIN_ORDNER = Path(__file__).resolve().parents[2] / 'qfield_plugin'
 PLUGIN_QML = 'GoKart_Wohnung.qml'
-PLUGIN_DATEIEN = ('gokart_suche.js', 'gokart_biotop.js', 'gokart_icon.svg', 'gokart_foto.svg', 'gokart_biotop.svg')
+PLUGIN_DATEIEN = ('gokart_suche.js', 'gokart_biotop.js', 'gokart_zusatz.js', 'gokart_icon.svg', 'gokart_foto.svg',
+                  'gokart_biotop.svg')
 
 
 def projektdatei(ordner, name=None):

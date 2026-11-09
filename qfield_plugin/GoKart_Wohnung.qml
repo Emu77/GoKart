@@ -15,6 +15,12 @@
 //   Gesetzt werden geaendert_am und – bei neuer Art oder Fläche – ersetzt (alte Schlüssel "Fläche:taxon_id",
 //   kommagetrennt), damit abgleich.py den alten Eintrag auf der anderen Seite entfernt statt ihn zurückzuholen.
 //   Fehlen die Felder (ältere Projekte), funktioniert das Bearbeiten trotzdem; abgleich.py legt sie an.
+// Version 0.7: Punktaufnahmen – Arten an GPS-Punkten ohne Fläche (Modul "punkte" in gokart_module, Layer
+//   aufnahme_punkte; Artnachweis bekommt punkt_id statt flaeche_id). Warnung bei schlechter GPS-Genauigkeit
+//   (gokart_punkt_genauigkeit, Standard 10 m), Hinweis ab gokart_punkt_radius (Standard 25 m) Abstand zum Punkt.
+//   Zusatzangaben je Art (deckung, anzahl, phaenologie): per Sprache („Calluna, Deckung drei, blühend“) und über
+//   eine Schnellleiste nach dem Speichern – welche, legt gokart_zusatz fest (z. B. "deckung,phaenologie").
+//   Tabelle/Spalten/Layer legen build_gokart_projekt.py, abgleich.py oder GoKart Desktop („Einrichten…“) an.
 // Getestet gegen die API von QField 4.x; QField 3.x wird über einen Fallback unterstützt.
 import QtQuick
 import QtQuick.Controls
@@ -22,6 +28,7 @@ import QtQuick.Layouts
 import QtQuick.Controls.Material
 import "gokart_suche.js" as Suche
 import "gokart_biotop.js" as Biotop
+import "gokart_zusatz.js" as Zusatz
 
 Item {
     id: plugin
@@ -54,10 +61,43 @@ Item {
     property var biotopTreffer: []
     property int biotopAuswahl: -1
     property var biotopeDerFlaeche: []   // [{ fid, schluessel, code, name, rolle }]
-    property var erfassung: ({ arten: true, fotos: true, biotope: true })   // aus gokart_module
+    property var erfassung: ({ arten: true, fotos: true, biotope: true, punkte: false })   // aus gokart_module
+    property var gu: null                // GeometryUtils / QfGeometryUtils (Punktgeometrie)
+    property var crsu: null              // CoordinateReferenceSystemUtils / QfCoordinateReferenceSystemUtils
+    property string ortArt: 'flaeche'    // 'flaeche' oder 'punkt' – wo die nächste Art landet
+    property string aktiverPunkt: ''     // punkt_id der aktiven Punktaufnahme
+    property var punkte: []              // [{ id, am, hacc, quelle, x, y }] neueste zuerst
+    property var punktCfg: ({ genauigkeit: 10, radius: 25 })
+    property bool punktTrotzdem: false   // zweites Antippen übernimmt eine ungenaue Position
+    property var gpsStand: ({ ok: false, hacc: -1, abstand: -1 })   // für die Anzeige im Punkt-Modus
+    property var zusatzFelder: []        // aktive Zusatzangaben aus gokart_zusatz
+    property var letzterNachweis: null   // zuletzt gespeicherter Eintrag – Ziel der Schnellleiste
+    property string fadenkreuz: ''       // '' | 'neu' | 'verschieben' – Punkt per Fadenkreuz auf der Karte
+    property string fadenkreuzInfo: ''   // Koordinate + Fläche unter dem Fadenkreuz (Anzeige)
 
     readonly property color gruen: '#167d50'
     readonly property color gruenHell: '#e6f6eb'
+
+    // Umschalt-/Auswahlknopf mit eigenen Farben (unabhängig vom QField-Theme gut lesbar)
+    component Chip: Button {
+        id: chip
+        property bool an: false
+        font.pixelSize: 14
+        leftPadding: 10; rightPadding: 10; topPadding: 4; bottomPadding: 4
+        implicitHeight: 38
+        implicitWidth: Math.max(44, chipText.implicitWidth + leftPadding + rightPadding)
+        contentItem: Label {
+            id: chipText
+            text: chip.text; font: chip.font
+            color: chip.an ? 'white' : (chip.enabled ? '#1c2934' : '#9aa59f')
+            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+        }
+        background: Rectangle {
+            radius: 8
+            color: chip.an ? (chip.down ? '#0f5c3a' : plugin.gruen) : (chip.down ? '#d8e4da' : '#eef3ef')
+            border.color: chip.an ? plugin.gruen : '#c9d6cc'
+        }
+    }
 
     Component.onCompleted: {
         if (!apiLaden()) {
@@ -71,7 +111,9 @@ Item {
             else knoepfe[i][1].visible = false;     // nicht eingehängt -> nirgends sichtbar
         }
         if (!erfassung.arten && !erfassung.fotos && !erfassung.biotope)
-            meldung('GoKart: gokart_module enthält keine bekannte Erfassung (arten, fotos, biotope).');
+            meldung('GoKart: gokart_module enthält keine bekannte Erfassung (arten, fotos, biotope, punkte).');
+        else if (erfassung.punkte && !erfassung.arten)
+            meldung('GoKart: Punktaufnahmen brauchen das Modul „arten“ (gokart_module).');
     }
 
     // ---------------------------------------------------------------- Hilfsfunktionen
@@ -114,6 +156,16 @@ Item {
                 if (d && d.f) dateiUtils = d.f;
             } catch (e3) { /* nächste Variante */ }
         }
+        var guVarianten = [
+            'import QtQuick; import org.qfield.core; QtObject { property var g: QfGeometryUtils; property var c: QfCoordinateReferenceSystemUtils }',
+            'import QtQuick; import org.qfield; QtObject { property var g: GeometryUtils; property var c: CoordinateReferenceSystemUtils }'
+        ];
+        for (var n = 0; n < guVarianten.length && !gu; n++) {
+            try {
+                var g = Qt.createQmlObject(guVarianten[n], plugin, 'gokartGu' + n);
+                if (g && g.g) { gu = g.g; crsu = g.c || null; }
+            } catch (e4) { /* nächste Variante */ }
+        }
         return ok;
     }
 
@@ -129,13 +181,13 @@ Item {
         return ebene(String(ref));
     }
 
-    // gokart_module: kommagetrennt (arten, fotos, biotope); leer/fehlend = alle
+    // gokart_module: kommagetrennt (arten, fotos, biotope, punkte); leer/fehlend = alle außer punkte
     function moduleLaden() {
         var roh = String(projektVariablen().gokart_module || '').toLowerCase().trim();
-        if (!roh || roh === 'null') { erfassung = { arten: true, fotos: true, biotope: true }; return; }
+        if (!roh || roh === 'null') { erfassung = { arten: true, fotos: true, biotope: true, punkte: false }; return; }
         var teile = roh.split(/[,;]/).map(function (t) { return t.trim(); });
         erfassung = { arten: teile.indexOf('arten') >= 0, fotos: teile.indexOf('fotos') >= 0,
-                   biotope: teile.indexOf('biotope') >= 0 };
+                   biotope: teile.indexOf('biotope') >= 0, punkte: teile.indexOf('punkte') >= 0 };
     }
 
     // Liest gokart_*-Variablen; ohne Variablen wird nach bekannten Layernamen gesucht.
@@ -148,8 +200,14 @@ Item {
             nachweise: layerAusRef(v.gokart_nachweis_layer) || ebene('artnachweise'),
             fk: v.gokart_nachweis_fk || 'flaeche_id',
             biotopSchluessel: String(v.gokart_biotop_schluessel || '').toUpperCase(),
+            punkte: erfassung.punkte ? ebene('aufnahme_punkte') : null,
             quelle: v.gokart_flaechen_layer ? 'Projektvariablen' : 'Layernamen (Fallback)'
         };
+        punktCfg = { genauigkeit: Zusatz.zahlOder(v.gokart_punkt_genauigkeit, 10),
+                     radius: Zusatz.zahlOder(v.gokart_punkt_radius, 25) };
+        zusatzFelder = Zusatz.aktiveFelder(v.gokart_zusatz);
+        if (!c.punkte && ortArt === 'punkt') ortArt = 'flaeche';
+        if (c.punkte && !c.flaechen) ortArt = 'punkt';
         if (c.flaechen && !c.label) {
             var kand = ['Raum', 'raum', 'name', 'Name', 'bezeichnung', 'Bezeichnung'];
             for (var i = 0; i < kand.length; i++)
@@ -157,9 +215,10 @@ Item {
         }
         cfg = c;
         protokoll('Konfiguration aus ' + c.quelle + ': Flächen=' + (c.flaechen ? c.flaechen.name : 'FEHLT') +
-                  ' [' + c.key + '], Nachweise=' + (c.nachweise ? c.nachweise.name : 'FEHLT') + ' [' + c.fk + ']',
-                  !c.flaechen || (erfassung.arten && !c.nachweise));
-        return !!(c.flaechen && (c.nachweise || !erfassung.arten));
+                  ' [' + c.key + '], Nachweise=' + (c.nachweise ? c.nachweise.name : 'FEHLT') + ' [' + c.fk + ']' +
+                  (erfassung.punkte ? ', Punkte=' + (c.punkte ? c.punkte.name : 'FEHLT') : ''),
+                  !(c.flaechen || c.punkte) || (erfassung.arten && !c.nachweise) || (erfassung.punkte && !c.punkte));
+        return !!((c.flaechen || c.punkte) && (c.nachweise || !erfassung.arten));
     }
 
     function ebene(name) {
@@ -284,20 +343,281 @@ Item {
         if (!aktiveFlaeche && liste.length === 1) aktiveFlaeche = liste[0].id;
     }
 
+    // ---------------------------------------------------------------- Ort: Fläche oder Punktaufnahme
+    // Ort-Schlüssel wie in abgleich.py: Flächen-ID oder '@' + punkt_id
+    function punktModus() { return ortArt === 'punkt'; }
+    function ortSchluessel() { return punktModus() ? (aktiverPunkt ? '@' + aktiverPunkt : '') : aktiveFlaeche; }
+    function ortFilter(ort) {
+        ort = String(ort);
+        return ort.charAt(0) === '@' ? '"punkt_id" = ' + textSql(ort.substring(1)) : '"' + cfg.fk + '" = ' + textSql(ort);
+    }
+    function ortName(ort) {
+        ort = String(ort || '');
+        return ort.charAt(0) === '@' ? punktName(ort.substring(1)) : flaechenName(ort);
+    }
+    function ortAus(f) {
+        var fl = attr(f, cfg.fk);
+        if (fl !== null && String(fl) !== '') return String(fl);
+        var p = attr(f, 'punkt_id');
+        return p !== null && String(p) !== '' ? '@' + p : '';
+    }
+    function punkteVerfuegbar() { return !!(erfassung.punkte && cfg.punkte); }
+    function ortWechseln(art) {
+        if (art === ortArt) return;
+        if (bearbeitung) bearbeitenBeenden();
+        ortArt = art;
+        letzterNachweis = null;
+        if (art === 'punkt') { punkteLaden(); gpsAktualisieren(); }
+        artenLaden();
+    }
+
     function artenLaden() {
         var an = cfg.nachweise;
         var liste = [];
-        if (an && aktiveFlaeche) {
-            alleFeatures(an, '"' + cfg.fk + '" = ' + textSql(aktiveFlaeche), function (f) {
-                liste.push({ fid: f.id, taxon_id: attr(f, 'taxon_id'), flaeche: String(attr(f, cfg.fk) || ''),
+        var ort = ortSchluessel();
+        if (an && ort) {
+            alleFeatures(an, ortFilter(ort), function (f) {
+                liste.push({ fid: f.id, taxon_id: attr(f, 'taxon_id'), flaeche: ortAus(f),
                              name: attr(f, 'deutscher_name') || attr(f, 'wissenschaftlicher_name') || '?',
                              wiss: attr(f, 'wissenschaftlicher_name') || '', am: attr(f, 'erfasst_am') || '',
                              bemerkung: attr(f, 'bemerkung') || '', eingabe: attr(f, 'original_eingabe') || '',
-                             ersetzt: attr(f, 'ersetzt') || '', geaendert: attr(f, 'geaendert_am') || '' });
+                             ersetzt: attr(f, 'ersetzt') || '', geaendert: attr(f, 'geaendert_am') || '',
+                             deckung: attr(f, 'deckung') || '', anzahl: attr(f, 'anzahl') || '',
+                             phaenologie: attr(f, 'phaenologie') || '' });
             });
             liste.sort(function (a, b) { return String(b.am).localeCompare(String(a.am)); });
         }
         artenDerFlaeche = liste;
+        // Schnellleiste zeigt den aktuellen Stand des Eintrags
+        if (letzterNachweis) letzterNachweis = eintragMitFid(letzterNachweis.fid);
+        if (bearbeitung) { var b = eintragMitFid(bearbeitung.fid); if (b) bearbeitung = b; }
+    }
+
+    function eintragMitFid(fid) {
+        for (var i = 0; i < artenDerFlaeche.length; i++) if (artenDerFlaeche[i].fid === fid) return artenDerFlaeche[i];
+        return null;
+    }
+
+    // ---------------------------------------------------------------- Punktaufnahmen
+    function punktName(id) {
+        for (var i = 0; i < punkte.length; i++) {
+            var p = punkte[i];
+            if (p.id === id) return 'Punkt ' + String(p.am).replace('T', ' ').substring(5, 16).replace('-', '.') +
+                                    (p.hacc !== null ? ' (±' + Math.round(p.hacc) + ' m)' : '');
+        }
+        return 'Punkt ' + id;
+    }
+
+    // QgsFeature.geometry / QgsGeometry.isNull sind in QField Eigenschaften, in Tests teils Methoden
+    function geometrieVon(f) {
+        try { return (typeof f.geometry === 'function') ? f.geometry() : f.geometry; } catch (e) { return null; }
+    }
+    function geometrieLeer(g) {
+        if (!g) return true;
+        try {
+            if ((typeof g.isNull === 'function') ? g.isNull() : g.isNull) return true;
+            if (typeof g.isEmpty === 'function') return g.isEmpty();
+        } catch (e) { return true; }
+        return false;
+    }
+
+    function punktXY(f) {
+        try {
+            var g = geometrieVon(f);
+            if (geometrieLeer(g)) return null;
+            if (gu) {
+                var c = gu.centroid(g);
+                if (isFinite(c.x) && isFinite(c.y)) return { x: Number(c.x), y: Number(c.y) };
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    function punkteLaden() {
+        var pl = cfg.punkte, liste = [];
+        if (pl) alleFeatures(pl, null, function (f) {
+            var id = attr(f, 'punkt_id');
+            if (id === null) return;
+            var xy = punktXY(f);
+            var h = attr(f, 'gps_genauigkeit');
+            liste.push({ id: String(id), am: attr(f, 'erfasst_am') || '', hacc: h === null ? null : Number(h),
+                         quelle: attr(f, 'pos_quelle') || '', x: xy ? xy.x : null, y: xy ? xy.y : null });
+        });
+        liste.sort(function (a, b) { return String(b.am).localeCompare(String(a.am)); });
+        punkte = liste;
+        if (aktiverPunkt && !liste.some(function (p) { return p.id === aktiverPunkt; })) aktiverPunkt = '';
+    }
+
+    function punktWaehlen(id) {
+        if (bearbeitung) bearbeitenBeenden();
+        aktiverPunkt = String(id || '');
+        letzterNachweis = null;
+        artenLaden();
+        gpsAktualisieren();
+    }
+
+    function aktiverPunktDaten() {
+        for (var i = 0; i < punkte.length; i++) if (punkte[i].id === aktiverPunkt) return punkte[i];
+        return null;
+    }
+
+    // Koordinate (x, y in kbs – Text wie 'EPSG:4326' oder KBS-Objekt) ins KBS des Punkt-Layers
+    function inLayerKbs(x, y, kbs) {
+        var pl = cfg.punkte;
+        if (!pl || !gu) return null;
+        try {
+            var quelle = (typeof kbs === 'string') ? (crsu ? crsu.fromDescription(kbs) : null) : kbs;
+            if (!quelle) return null;
+            var p = gu.reprojectPoint(gu.point(Number(x), Number(y)), quelle, pl.crs);
+            if (isFinite(p.x) && isFinite(p.y)) return { x: Number(p.x), y: Number(p.y) };
+        } catch (e) { protokoll('Umrechnung fehlgeschlagen: ' + e, true); }
+        return null;
+    }
+
+    // GPS-Genauigkeit und Abstand zum aktiven Punkt für die Anzeige (alle 3 s im Punkt-Modus)
+    function gpsAktualisieren() {
+        var pos = gpsPosition();
+        var stand = { ok: !!pos, hacc: -1, abstand: -1 };
+        if (pos) {
+            if (pos.haccValid) stand.hacc = Number(pos.hacc);
+            var p = aktiverPunktDaten();
+            if (p && p.x !== null) {
+                var hier = inLayerKbs(pos.longitude, pos.latitude, 'EPSG:4326');
+                if (hier) stand.abstand = Zusatz.abstand(p.x, p.y, hier.x, hier.y);
+            }
+        }
+        gpsStand = stand;
+    }
+
+    // quelle: 'gps' (Position, Genauigkeit wird geprüft) oder 'karte' (Kartenmitte, pos_quelle = manuell)
+    function punktAnlegen(quelle) {
+        var pl = cfg.punkte;
+        if (!pl) { meldung('Layer aufnahme_punkte fehlt – am PC abgleich.py oder GoKart Desktop „Einrichten…“.'); return; }
+        if (!gu) { meldung('QField-Geometriefunktionen nicht gefunden – Punkt kann nicht angelegt werden.'); return; }
+        var xy = null, hacc = null, hoehe = null;
+        if (quelle === 'gps') {
+            var pos = gpsPosition();
+            if (!pos) { meldung('Keine gültige GPS-Position – „Karte“ setzt den Punkt in die Kartenmitte.'); return; }
+            hacc = pos.haccValid ? Number(pos.hacc) : null;
+            if ((hacc === null || hacc > punktCfg.genauigkeit) && !punktTrotzdem) {
+                punktTrotzdem = true;
+                trotzdemTimer.restart();
+                meldung('GPS-Genauigkeit ' + (hacc === null ? 'unbekannt' : '±' + Math.round(hacc) + ' m') +
+                        ' (Schwelle ' + punktCfg.genauigkeit + ' m) – warten, nochmal tippen zum Übernehmen oder „Karte“.');
+                return;
+            }
+            if (pos.elevationValid) hoehe = Number(pos.elevation);
+            xy = inLayerKbs(pos.longitude, pos.latitude, 'EPSG:4326');
+        } else {
+            var fk = fadenkreuzPunkt();
+            if (!fk) { meldung('Fadenkreuz/Kartenmitte nicht ermittelbar.'); return; }
+            xy = inLayerKbs(fk.x, fk.y, fk.crs);
+        }
+        punktTrotzdem = false;
+        punktSpeichern(xy, quelle === 'gps' ? 'gps' : 'manuell', hacc, hoehe);
+    }
+
+    function punktSpeichern(xy, quelle, hacc, hoehe) {
+        var pl = cfg.punkte;
+        if (!xy) { meldung('Position konnte nicht ins Koordinatensystem des Punkt-Layers umgerechnet werden.'); return; }
+        offeneAenderungenSpeichern(pl);
+        var am = jetzt();
+        var id = Zusatz.neuePunktId(am);
+        var ok = inBearbeitung(pl, function () {
+            var geom = gu.createGeometryFromWkt('POINT(' + xy.x + ' ' + xy.y + ')');
+            var f = fu.createFeature(pl, geom);
+            setze(f, pl, 'punkt_id', id);
+            setze(f, pl, 'erfasst_am', am);
+            setze(f, pl, 'pos_quelle', quelle);
+            if (hacc !== null) setze(f, pl, 'gps_genauigkeit', Math.round(hacc * 10) / 10);
+            if (hoehe !== null) setze(f, pl, 'hoehe', Math.round(hoehe * 10) / 10);
+            return lu.addFeature(pl, f);
+        });
+        if (!ok) { meldung('Punkt nicht gespeichert – Details unten im Dialog.'); return; }
+        punkteLaden();
+        punktWaehlen(id);
+        meldung('📍 Neue Aufnahme ' + punktName(id) + (quelle === 'gps' ? '' : ' – Fadenkreuz'));
+        sucheFeld.forceActiveFocus();
+    }
+
+    // ---------------------------------------------------------------- Fadenkreuz (Punkt manuell auf der Karte)
+    // Position des QField-Fadenkreuzes (rastet auf Flächenkanten/-ecken ein, wenn Einrasten an ist),
+    // sonst Kartenmitte. Ergebnis im Karten-KBS: { x, y, crs }
+    function fadenkreuzPunkt() {
+        try {
+            var ms = iface.mapCanvas().mapSettings;
+            var loc = null;
+            try { loc = iface.findItemByObjectName('coordinateLocator'); } catch (e1) {}
+            var c = (loc && loc.currentCoordinate && isFinite(loc.currentCoordinate.x)) ? loc.currentCoordinate : ms.center;
+            return { x: Number(c.x), y: Number(c.y), crs: ms.destinationCrs };
+        } catch (e) { protokoll('Fadenkreuz: ' + e, true); }
+        return null;
+    }
+
+    function fadenkreuzStarten(modus) {
+        if (!cfg.punkte || !gu) { meldung('Punkt-Layer oder QField-Geometriefunktionen fehlen.'); return; }
+        if (modus === 'verschieben' && !aktiverPunkt) { meldung('Erst eine Punktaufnahme wählen.'); return; }
+        fadenkreuz = modus;
+        fadenkreuzAktualisieren();
+        dialog.close();
+        meldung('Karte verschieben, bis das Fadenkreuz auf der Stelle liegt – dann „Hier setzen“.');
+    }
+
+    function fadenkreuzAktualisieren() {
+        var fk = fadenkreuzPunkt();
+        if (!fk) { fadenkreuzInfo = 'Fadenkreuz nicht ermittelbar'; return; }
+        var xy = inLayerKbs(fk.x, fk.y, fk.crs);
+        var t = xy ? 'R ' + Math.round(xy.x) + ' · H ' + Math.round(xy.y) + ' (' + (cfg.punkte.crs.authid || '') + ')'
+                   : 'Umrechnung nicht möglich';
+        var fl = '';
+        try { if (cfg.flaechen) fl = flaecheAnPunkt(fk.x, fk.y, fk.crs.authid); } catch (e) {}
+        if (fl) t += ' · in ' + flaechenName(fl);
+        var p = aktiverPunktDaten();
+        if (fadenkreuz === 'verschieben' && p && p.x !== null && xy)
+            t += ' · ' + Math.round(Zusatz.abstand(p.x, p.y, xy.x, xy.y)) + ' m vom bisherigen Punkt';
+        fadenkreuzInfo = t;
+    }
+
+    function fadenkreuzUebernehmen() {
+        var fk = fadenkreuzPunkt();
+        var xy = fk ? inLayerKbs(fk.x, fk.y, fk.crs) : null;
+        var modus = fadenkreuz;
+        fadenkreuz = '';
+        dialog.open();
+        if (modus === 'verschieben') punktVerschieben(xy);
+        else punktSpeichern(xy, 'manuell', null, null);
+    }
+
+    function fadenkreuzAbbrechen() {
+        fadenkreuz = '';
+        dialog.open();
+    }
+
+    // Geometrie lässt sich in QML nicht direkt ändern -> neues Feature mit gleicher punkt_id, altes löschen.
+    // Die Artnachweise hängen an der punkt_id und bleiben verknüpft.
+    function punktVerschieben(xy) {
+        var pl = cfg.punkte;
+        if (!xy) { meldung('Position konnte nicht ins Koordinatensystem des Punkt-Layers umgerechnet werden.'); return; }
+        var alt = null;
+        alleFeatures(pl, '"punkt_id" = ' + textSql(aktiverPunkt), function (f) { if (!alt) alt = f; });
+        if (!alt) { meldung('Punkt ' + aktiverPunkt + ' nicht gefunden.'); return; }
+        offeneAenderungenSpeichern(pl);
+        var namen = pl.fields.names;
+        var werte = {};
+        for (var i = 0; i < namen.length; i++)
+            if (['fid', 'geom', 'geometry'].indexOf(namen[i]) < 0) werte[namen[i]] = attr(alt, namen[i]);
+        var altId = alt.id;
+        var ok = inBearbeitung(pl, function () {
+            var f = fu.createFeature(pl, gu.createGeometryFromWkt('POINT(' + xy.x + ' ' + xy.y + ')'));
+            for (var n in werte) if (werte[n] !== null) setze(f, pl, n, werte[n]);
+            setze(f, pl, 'pos_quelle', 'korrigiert');
+            setze(f, pl, 'gps_genauigkeit', null);   // von Hand gesetzt: GPS-Genauigkeit gilt nicht mehr
+            setze(f, pl, 'geaendert_am', jetzt());
+            return lu.addFeature(pl, f) && lu.deleteFeature(qgisProject, pl, altId, false);
+        });
+        meldung(ok ? '📍 ' + punktName(aktiverPunkt) + ' verschoben.' : 'Verschieben fehlgeschlagen – Details unten im Dialog.');
+        punkteLaden();
+        gpsAktualisieren();
     }
 
     // ---------------------------------------------------------------- Fläche bestimmen
@@ -326,11 +646,16 @@ Item {
                 return;
             var id = String(wert);
 
-            var geom = f.geometry();
-            if (!geom || geom.isNull() || geom.isEmpty())
+            var geom = geometrieVon(f);
+            if (geometrieLeer(geom))
                 return;
 
-            var groesse = geom.area();
+            // area() ist in QML nicht aufrufbar -> notfalls Größe der Bounding-Box als Ersatz
+            var groesse = 0;
+            try {
+                if (typeof geom.area === 'function') groesse = geom.area();
+                else if (gu && gu.boundingBox) { var bb = gu.boundingBox(geom); groesse = bb.width * bb.height; }
+            } catch (e3) {}
 
             if (groesse < kleinsteFlaeche) {
                 kleinsteFlaeche = groesse;
@@ -380,9 +705,13 @@ Item {
     }
 
     // ---------------------------------------------------------------- Suche & Speichern
+    // Eingabe = Artname + optionale Zusatzangaben („Calluna, Deckung drei, blühend“)
+    function eingabeZerlegen() { return Zusatz.zerlegen(sucheFeld.text); }
+    function suchName() { return eingabeZerlegen().name; }
+
     function suchen(text) {
         if (!index) return;
-        var t = Suche.suchen(index, text, 5);
+        var t = Suche.suchen(index, Zusatz.zerlegen(text).name, 5);
         treffer = t;
         // Genau ein exakter Treffer -> gleich vorauswählen (schneller Ablauf beim Diktieren)
         var exakte = t.filter(function (r) { return r.exakt; });
@@ -394,33 +723,73 @@ Item {
     function speichern() {
         var r = ausgewaehlt();
         if (!r) { meldung('Bitte zuerst eine Art auswählen.'); return; }
-        if (!aktiveFlaeche) { meldung('Bitte zuerst eine Fläche wählen.'); return; }
+        var ort = ortSchluessel();
+        if (!ort) { meldung(punktModus() ? 'Bitte zuerst eine Punktaufnahme anlegen („Neue Aufnahme hier“).'
+                                         : 'Bitte zuerst eine Fläche wählen.'); return; }
         var an = cfg.nachweise;
         if (!an) { meldung('Artnachweis-Layer fehlt – Einrichtung am Desktop prüfen.'); return; }
+        var punkt = ort.charAt(0) === '@';
+        if (punkt && an.fields.indexFromName('punkt_id') < 0) {
+            meldung('Feld punkt_id fehlt in den Artnachweisen – am PC abgleich.py laufen lassen.'); return;
+        }
         offeneAenderungenSpeichern(an);
 
         var schonDa = 0;
-        alleFeatures(an, '"' + cfg.fk + '" = ' + textSql(aktiveFlaeche) + ' AND "taxon_id" = ' + Number(r.id), function () { schonDa++; });
+        var filter = ortFilter(ort) + ' AND "taxon_id" = ' + Number(r.id);
+        alleFeatures(an, filter, function () { schonDa++; });
         var anzeige = r.taxon.deutscher_name || r.taxon.wissenschaftlicher_name;
-        if (schonDa > 0) { meldung(anzeige + ' ist auf ' + flaechenName(aktiveFlaeche) + ' bereits erfasst.'); eingabeLeeren(); return; }
+        if (schonDa > 0) { meldung(anzeige + ' ist auf ' + ortName(ort) + ' bereits erfasst.'); eingabeLeeren(); return; }
 
         var eingabe = sucheFeld.text;
+        var teile = eingabeZerlegen();
         var ok = inBearbeitung(an, function () {
             var f = fu.createFeature(an);
-            setze(f, an, cfg.fk, aktiveFlaeche);
+            if (punkt) setze(f, an, 'punkt_id', ort.substring(1));
+            else setze(f, an, cfg.fk, ort);
             setze(f, an, 'taxon_id', Number(r.id));
             setze(f, an, 'wissenschaftlicher_name', r.taxon.wissenschaftlicher_name);
             setze(f, an, 'deutscher_name', r.taxon.deutscher_name);
             setze(f, an, 'original_eingabe', eingabe);
             setze(f, an, 'erfasst_am', jetzt());
+            for (var k in teile.werte) setze(f, an, k, teile.werte[k]);
             return lu.addFeature(an, f);
         });
         if (!ok) { meldung('Speichern fehlgeschlagen – Details unten im Dialog.'); artenLaden(); return; }
 
-        if (synonymMerken.visible && synonymMerken.checked) synonymSpeichern(r.id, eingabe);
-        meldung('✔ ' + anzeige + ' → ' + flaechenName(aktiveFlaeche));
+        if (synonymMerken.visible && synonymMerken.checked) synonymSpeichern(r.id, teile.name);
+        var zusatzText = Zusatz.kurztext(teile.werte);
+        meldung('✔ ' + anzeige + ' → ' + ortName(ort) + (zusatzText ? ' · ' + zusatzText : '') +
+                (teile.unklar.length ? ' – nicht erkannt: ' + teile.unklar.join(', ') : ''));
         artenLaden();
+        // neuen Eintrag als Ziel der Schnellleiste merken
+        var neu = null;
+        for (var i = 0; i < artenDerFlaeche.length; i++)
+            if (Number(artenDerFlaeche[i].taxon_id) === Number(r.id)) { neu = artenDerFlaeche[i]; break; }
+        letzterNachweis = neu;
         eingabeLeeren();
+    }
+
+    // ---------------------------------------------------------------- Zusatzangaben (Schnellleiste)
+    function zusatzZiel() { return bearbeitung || letzterNachweis; }
+
+    // Antippen setzt den Wert sofort; derselbe Wert nochmal = leeren
+    function zusatzSetzen(feld, wert) {
+        var z = zusatzZiel(), an = cfg.nachweise;
+        if (!z || !an) return;
+        var i = an.fields.indexFromName(feld);
+        if (i < 0) { meldung('Feld ' + feld + ' fehlt in den Artnachweisen – am PC abgleich.py laufen lassen.'); return; }
+        var neu = (String(z[feld] || '') === String(wert)) ? null : wert;
+        offeneAenderungenSpeichern(an);
+        var ok = inBearbeitung(an, function () {
+            var erfolg = an.changeAttributeValue(z.fid, i, neu);
+            var g = an.fields.indexFromName('geaendert_am');
+            if (g >= 0) erfolg = an.changeAttributeValue(z.fid, g, jetzt()) && erfolg;
+            return erfolg;
+        });
+        if (!ok) { meldung('Nicht gespeichert – Details unten im Dialog.'); return; }
+        artenLaden();
+        var n = eintragMitFid(z.fid);
+        meldung(z.name + ': ' + (Zusatz.kurztext(n || {}) || 'keine Zusatzangaben'));
     }
 
     function synonymSpeichern(taxonId, text) {
@@ -449,9 +818,10 @@ Item {
 
     // ---------------------------------------------------------------- Artnachweis bearbeiten
     function bearbeitenStarten(eintrag) {
-        if (!eintrag) { meldung('Auf dieser Fläche ist noch keine Art erfasst.'); return; }
+        if (!eintrag) { meldung(punktModus() ? 'An diesem Punkt ist noch keine Art erfasst.'
+                                             : 'Auf dieser Fläche ist noch keine Art erfasst.'); return; }
         bearbeitung = eintrag;
-        bearbeitFlaeche = eintrag.flaeche || aktiveFlaeche;
+        bearbeitFlaeche = eintrag.flaeche || ortSchluessel();
         bemerkungFeld.text = eintrag.bemerkung || '';
         sucheFeld.text = '';
         treffer = [];
@@ -488,7 +858,10 @@ Item {
         var neueArt = !!(r && Number(r.id) !== Number(b.taxon_id));
         var ziel = bearbeitFlaeche || b.flaeche;
         var bem = String(bemerkungFeld.text).trim();
-        return { art: r, flaeche: ziel, bemerkung: bem, neueArt: neueArt,
+        var werte = Zusatz.zerlegen(sucheFeld.text).werte, zusatz = {};
+        for (var k in werte) if (String(b[k] || '') !== werte[k]) zusatz[k] = werte[k];
+        return { art: r, flaeche: ziel, bemerkung: bem, neueArt: neueArt, zusatz: zusatz,
+                 neueZusatz: Object.keys(zusatz).length > 0,
                  neueFlaeche: ziel !== b.flaeche, neueBemerkung: bem !== String(b.bemerkung || '').trim() };
     }
 
@@ -497,7 +870,8 @@ Item {
         if (!g) return '';
         var teile = [];
         if (g.neueArt) teile.push('Art → ' + (g.art.taxon.deutscher_name || g.art.taxon.wissenschaftlicher_name));
-        if (g.neueFlaeche) teile.push('Fläche → ' + flaechenName(g.flaeche));
+        if (g.neueFlaeche) teile.push('Fläche → ' + ortName(g.flaeche));
+        if (g.neueZusatz) teile.push(Zusatz.kurztext(g.zusatz));
         if (g.neueBemerkung) teile.push(g.bemerkung ? 'Bemerkung' : 'Bemerkung leeren');
         return teile.length ? 'Speichern: ' + teile.join(' · ') : 'Keine Änderung';
     }
@@ -506,18 +880,18 @@ Item {
         var b = bearbeitung, g = geplanteAenderung();
         var an = cfg.nachweise;
         if (!b || !g || !an) return;
-        if (!g.neueArt && !g.neueFlaeche && !g.neueBemerkung) { meldung('Keine Änderung.'); return; }
+        if (!g.neueArt && !g.neueFlaeche && !g.neueBemerkung && !g.neueZusatz) { meldung('Keine Änderung.'); return; }
         offeneAenderungenSpeichern(an);
 
         var tid = g.neueArt ? Number(g.art.id) : Number(b.taxon_id);
         if (g.neueArt || g.neueFlaeche) {
             var doppelt = 0;
-            alleFeatures(an, '"' + cfg.fk + '" = ' + textSql(g.flaeche) + ' AND "taxon_id" = ' + tid, function (f) {
+            alleFeatures(an, ortFilter(g.flaeche) + ' AND "taxon_id" = ' + tid, function (f) {
                 if (f.id !== b.fid) doppelt++;
             });
             if (doppelt) {
                 var nm = g.neueArt ? (g.art.taxon.deutscher_name || g.art.taxon.wissenschaftlicher_name) : b.name;
-                meldung(nm + ' ist auf ' + flaechenName(g.flaeche) + ' bereits erfasst – dort ggf. den doppelten Eintrag löschen.');
+                meldung(nm + ' ist auf ' + ortName(g.flaeche) + ' bereits erfasst – dort ggf. den doppelten Eintrag löschen.');
                 return;
             }
         }
@@ -545,12 +919,13 @@ Item {
                 erfolg = aendern('ersetzt', liste.join(',')) && erfolg;
             }
             if (g.neueBemerkung) erfolg = aendern('bemerkung', g.bemerkung === '' ? null : g.bemerkung) && erfolg;
+            for (var k in g.zusatz) erfolg = aendern(k, g.zusatz[k]) && erfolg;
             erfolg = aendern('geaendert_am', jetzt()) && erfolg;
             return erfolg;
         });
         if (!ok) { meldung('Änderung nicht gespeichert – Details unten im Dialog.'); artenLaden(); return; }
 
-        if (g.neueArt && synonymMerken.visible && synonymMerken.checked) synonymSpeichern(g.art.id, eingabe);
+        if (g.neueArt && synonymMerken.visible && synonymMerken.checked) synonymSpeichern(g.art.id, suchName());
         var text = '✔ geändert: ' + aenderungText().replace('Speichern: ', '');
         if (fehlend.indexOf('ersetzt') >= 0 && (g.neueArt || g.neueFlaeche))
             text += ' – Hinweis: Feld "ersetzt" fehlt, am PC abgleich.py laufen lassen, sonst kommt der alte Eintrag zurück.';
@@ -834,9 +1209,11 @@ Item {
             ladeTimer.start();   // UI zuerst zeichnen, dann laden
         } else {
             flaechenLaden();
+            punkteLaden();
             artenLaden();
             sucheFeld.forceActiveFocus();
         }
+        if (punkteVerfuegbar()) offeneAenderungenSpeichern(cfg.punkte);
     }
 
     Timer {
@@ -846,11 +1223,83 @@ Item {
             var t0 = Date.now();
             var ok = indexLaden();
             flaechenLaden();
+            punkteLaden();
             artenLaden();
             laedt = false;
             if (ok) meldung('GoKart: ' + Object.keys(index.taxa).length + ' Taxa geladen (' + (Date.now() - t0) + ' ms)');
             sucheFeld.forceActiveFocus();
         }
+    }
+
+    Timer {
+        interval: 700
+        repeat: true
+        running: plugin.fadenkreuz !== ''
+        onTriggered: plugin.fadenkreuzAktualisieren()
+    }
+
+    // Leiste über der Karte, solange ein Punkt per Fadenkreuz gesetzt/verschoben wird
+    Rectangle {
+        id: fadenkreuzLeiste
+        objectName: 'gokartFadenkreuzLeiste'
+        parent: iface.mainWindow().contentItem
+        visible: plugin.fadenkreuz !== ''
+        z: 1000
+        anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
+        anchors.bottom: parent ? parent.bottom : undefined
+        anchors.bottomMargin: 96
+        width: Math.min(parent ? parent.width - 24 : 400, 440)
+        height: leisteSpalte.implicitHeight + 20
+        radius: 10
+        color: '#f7fbf8'
+        border.color: plugin.gruen
+        ColumnLayout {
+            id: leisteSpalte
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 6
+            Label {
+                Layout.fillWidth: true
+                text: plugin.fadenkreuz === 'verschieben' ? '📍 Punkt verschieben' : '📍 Neue Punktaufnahme'
+                font.bold: true; color: '#1c2934'
+            }
+            Label {
+                Layout.fillWidth: true
+                text: 'Karte verschieben, bis das Fadenkreuz auf der Stelle liegt.'
+                wrapMode: Text.Wrap; font.pixelSize: 12; color: '#53645a'
+            }
+            Label {
+                objectName: 'gokartFadenkreuzInfo'
+                Layout.fillWidth: true
+                text: plugin.fadenkreuzInfo
+                wrapMode: Text.Wrap; font.pixelSize: 13; color: '#167d50'
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Chip { Layout.fillWidth: true; text: 'Abbrechen'; onClicked: plugin.fadenkreuzAbbrechen() }
+                Chip {
+                    objectName: 'gokartFadenkreuzSetzen'
+                    Layout.fillWidth: true
+                    an: true
+                    text: '✓ Hier setzen'
+                    onClicked: plugin.fadenkreuzUebernehmen()
+                }
+            }
+        }
+    }
+
+    Timer {
+        id: trotzdemTimer
+        interval: 8000
+        onTriggered: plugin.punktTrotzdem = false
+    }
+
+    Timer {
+        id: gpsTimer
+        interval: 3000
+        repeat: true
+        running: dialog.visible && plugin.punktModus()
+        onTriggered: plugin.gpsAktualisieren()
     }
 
     Timer {
@@ -930,10 +1379,95 @@ Item {
                 Button { text: 'Schließen'; flat: true; onClicked: dialog.close() }
             }
 
-            // --- Fläche
-            Label { text: 'Fläche'; font.bold: true }
+            // --- Wo landet die Art: Fläche oder Punktaufnahme (nur mit Modul "punkte")
             RowLayout {
                 Layout.fillWidth: true
+                visible: plugin.punkteVerfuegbar()
+                Chip {
+                    Layout.fillWidth: true
+                    text: 'Fläche'
+                    enabled: !!plugin.cfg.flaechen
+                    an: !plugin.punktModus()
+                    onClicked: plugin.ortWechseln('flaeche')
+                }
+                Chip {
+                    objectName: 'gokartPunktModus'
+                    Layout.fillWidth: true
+                    text: '📍 Punkt (GPS)'
+                    an: plugin.punktModus()
+                    onClicked: plugin.ortWechseln('punkt')
+                }
+            }
+
+            // --- Punktaufnahme
+            ColumnLayout {
+                Layout.fillWidth: true
+                visible: plugin.punktModus()
+                spacing: 4
+                ComboBox {
+                    Layout.fillWidth: true
+                    model: plugin.punkte.map(function (p) { return plugin.punktName(p.id) + (p.quelle === 'manuell' ? ' · Karte' : ''); })
+                    currentIndex: {
+                        for (var i = 0; i < plugin.punkte.length; i++) if (plugin.punkte[i].id === plugin.aktiverPunkt) return i;
+                        return -1;
+                    }
+                    displayText: currentIndex < 0 ? (plugin.punkte.length ? 'Aufnahme wählen …' : 'Noch keine Punktaufnahme') : currentText
+                    onActivated: function (i) { plugin.punktWaehlen(plugin.punkte[i].id); }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Button {
+                        id: punktKnopf
+                        objectName: 'gokartPunktKnopf'
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 48
+                        text: plugin.punktTrotzdem ? 'Ungenau – trotzdem übernehmen' : '📍  Neue Aufnahme hier'
+                        font.pixelSize: 16
+                        contentItem: Label {
+                            text: punktKnopf.text; font: punktKnopf.font; color: 'white'; elide: Text.ElideRight
+                            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle { radius: 8; color: plugin.punktTrotzdem ? '#b86e00' : (punktKnopf.down ? '#0f5c3a' : plugin.gruen) }
+                        onClicked: plugin.punktAnlegen('gps')
+                    }
+                    Button {
+                        objectName: 'gokartFadenkreuzKnopf'
+                        text: '⌖ Fadenkreuz'
+                        onClicked: plugin.fadenkreuzStarten('neu')
+                    }
+                }
+                Button {
+                    Layout.fillWidth: true
+                    visible: plugin.aktiverPunkt !== ''
+                    text: 'Punkt verschieben (Fadenkreuz)'
+                    flat: true
+                    onClicked: plugin.fadenkreuzStarten('verschieben')
+                }
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.Wrap
+                    font.pixelSize: 12
+                    readonly property bool weit: plugin.gpsStand.abstand > plugin.punktCfg.radius
+                    color: weit || (plugin.gpsStand.hacc > plugin.punktCfg.genauigkeit) ? '#a35a00' : '#53645a'
+                    text: {
+                        var g = plugin.gpsStand, t = [];
+                        if (!g.ok) t.push('GPS: keine Position');
+                        else t.push('GPS ' + (g.hacc >= 0 ? '±' + Math.round(g.hacc) + ' m' : 'Genauigkeit unbekannt') +
+                                    (g.hacc > plugin.punktCfg.genauigkeit ? ' (Schwelle ' + plugin.punktCfg.genauigkeit + ' m)' : ''));
+                        if (g.abstand >= 0) t.push(Math.round(g.abstand) + ' m vom Punkt' +
+                                                   (weit ? ' – neue Aufnahme?' : ''));
+                        var p = plugin.aktiverPunktDaten();
+                        if (p && p.x !== null) t.push('Punkt R ' + Math.round(p.x) + ' · H ' + Math.round(p.y));
+                        return t.join(' · ');
+                    }
+                }
+            }
+
+            // --- Fläche
+            Label { text: 'Fläche'; font.bold: true; visible: !plugin.punktModus() }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: !plugin.punktModus()
                 ComboBox {
                     id: flaechenAuswahl
                     Layout.fillWidth: true
@@ -950,6 +1484,7 @@ Item {
             }
             CheckBox {
                 id: unbenannteZeigen
+                visible: !plugin.punktModus()
                 text: 'Unbenannte Flächen anzeigen'
                 checked: false
                 onToggled: plugin.flaechenLaden()
@@ -987,6 +1522,7 @@ Item {
                     }
                     RowLayout {
                         Layout.fillWidth: true
+                        visible: plugin.bearbeitung !== null && String(plugin.bearbeitung.flaeche).charAt(0) !== '@'
                         Label { text: 'Fläche'; color: '#1c2934' }
                         ComboBox {
                             id: bearbeitFlaecheAuswahl
@@ -1018,7 +1554,8 @@ Item {
                 font.pixelSize: 20
                 placeholderText: plugin.laedt ? 'Pflanzendaten werden geladen …'
                                  : (plugin.bearbeitung ? 'Neue Art sprechen/tippen – leer lassen = Art bleibt'
-                                                       : 'Tastatur-Mikro antippen oder tippen')
+                                                       : (plugin.zusatzFelder.length ? 'Mikro oder tippen, z. B. „Calluna, Deckung drei“'
+                                                                                     : 'Tastatur-Mikro antippen oder tippen'))
                 enabled: !plugin.laedt
                 inputMethodHints: Qt.ImhNoAutoUppercase
                 onTextChanged: suchTimer.restart()
@@ -1075,18 +1612,18 @@ Item {
             CheckBox {
                 id: synonymMerken
                 objectName: 'gokartSynonymMerken'
-                visible: plugin.ausgewaehlt() !== null && sucheFeld.text.trim().length > 1 &&
-                         !Suche.istExakterName(plugin.index, plugin.ausgewaehlt().id, sucheFeld.text)
-                text: '„' + sucheFeld.text.trim() + '“ als eigenes Synonym merken'
+                visible: plugin.ausgewaehlt() !== null && plugin.suchName().trim().length > 1 &&
+                         !Suche.istExakterName(plugin.index, plugin.ausgewaehlt().id, plugin.suchName())
+                text: '„' + plugin.suchName().trim() + '“ als eigenes Synonym merken'
             }
 
             Button {
                 Layout.fillWidth: true
                 visible: plugin.bearbeitung === null
                 text: plugin.ausgewaehlt()
-                      ? 'Zu ' + (plugin.aktiveFlaeche ? plugin.flaechenName(plugin.aktiveFlaeche) : '?') + ' hinzufügen: ' + (plugin.ausgewaehlt().taxon.deutscher_name || plugin.ausgewaehlt().taxon.wissenschaftlicher_name)
+                      ? 'Zu ' + (plugin.ortSchluessel() ? plugin.ortName(plugin.ortSchluessel()) : '?') + ' hinzufügen: ' + (plugin.ausgewaehlt().taxon.deutscher_name || plugin.ausgewaehlt().taxon.wissenschaftlicher_name)
                       : 'Art auswählen'
-                enabled: plugin.ausgewaehlt() !== null && plugin.aktiveFlaeche !== ''
+                enabled: plugin.ausgewaehlt() !== null && plugin.ortSchluessel() !== ''
                 highlighted: true
                 font.pixelSize: 17
                 onClicked: plugin.speichern()
@@ -1110,6 +1647,51 @@ Item {
                 onClicked: plugin.aenderungSpeichern()
             }
 
+            // --- Schnellleiste Zusatzangaben (gokart_zusatz) für die zuletzt erfasste bzw. bearbeitete Art
+            Rectangle {
+                Layout.fillWidth: true
+                visible: plugin.zusatzFelder.length > 0 && plugin.zusatzZiel() !== null
+                implicitHeight: zusatzSpalte.implicitHeight + 12
+                radius: 8
+                color: '#f3f7f4'
+                border.color: '#d8e4da'
+                ColumnLayout {
+                    id: zusatzSpalte
+                    anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                    anchors.margins: 6
+                    spacing: 2
+                    Label {
+                        Layout.fillWidth: true
+                        text: plugin.zusatzZiel() ? 'Zusatz: ' + plugin.zusatzZiel().name : ''
+                        font.bold: true; font.pixelSize: 13; elide: Text.ElideRight; color: '#1c2934'
+                    }
+                    Repeater {
+                        model: plugin.zusatzFelder
+                        delegate: Flow {
+                            id: zusatzZeile
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 4
+                            Label {
+                                text: Zusatz.FELDER[zusatzZeile.modelData].name
+                                width: 78; height: 38; verticalAlignment: Text.AlignVCenter
+                                color: '#53645a'; font.pixelSize: 12
+                            }
+                            Repeater {
+                                model: Zusatz.FELDER[zusatzZeile.modelData].werte
+                                delegate: Chip {
+                                    required property var modelData
+                                    objectName: 'gokartZusatz_' + zusatzZeile.modelData + '_' + modelData
+                                    text: modelData
+                                    an: { var z = plugin.zusatzZiel(); return !!z && String(z[zusatzZeile.modelData] || '') === String(modelData); }
+                                    onClicked: plugin.zusatzSetzen(zusatzZeile.modelData, modelData)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // --- Diagnose des letzten Speicherns (hilft bei der Fehlersuche im Gelände)
             Label {
                 Layout.fillWidth: true
@@ -1126,7 +1708,8 @@ Item {
                 Layout.topMargin: 6
                 Label {
                     Layout.fillWidth: true
-                    text: plugin.aktiveFlaeche ? 'Erfasst auf ' + plugin.flaechenName(plugin.aktiveFlaeche) + ': ' + plugin.artenDerFlaeche.length + ' Arten' : 'Keine Fläche gewählt'
+                    text: plugin.ortSchluessel() ? 'Erfasst ' + (plugin.punktModus() ? 'an ' : 'auf ') + plugin.ortName(plugin.ortSchluessel()) + ': ' + plugin.artenDerFlaeche.length + ' Arten'
+                                                 : (plugin.punktModus() ? 'Kein Punkt gewählt' : 'Keine Fläche gewählt')
                     font.bold: true
                     elide: Text.ElideRight
                 }
@@ -1172,6 +1755,12 @@ Item {
                                 onClicked: { if (sicher) plugin.eintragLoeschen(artZeile.modelData.fid); else { sicher = true; zurueck.start(); } }
                                 Timer { id: zurueck; interval: 3000; onTriggered: loeschKnopf.sicher = false }
                             }
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            visible: text !== ''
+                            text: Zusatz.kurztext(artZeile.modelData)
+                            color: '#167d50'; font.pixelSize: 12; elide: Text.ElideRight
                         }
                         Label {
                             Layout.fillWidth: true

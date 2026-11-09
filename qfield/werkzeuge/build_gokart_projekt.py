@@ -12,9 +12,14 @@ Vorlage zur Weitergabe (ohne Flächen, Kartierer bringen eigene Shapes mit):
 Was im Gelände erfasst wird (Knöpfe in QField; Projektvariable gokart_module, Standard: alles):
     python3 build_gokart_projekt.py --db … --ziel … --module arten,biotope
 
+Punktaufnahmen (Arten an GPS-Punkten ohne Fläche, Modul "punkte") mit Zusatzangaben zu den Arten:
+    python3 build_gokart_projekt.py --db … --ziel … --leer --crs EPSG:25832 --module arten,punkte \
+        --zusatzangaben deckung,phaenologie --punkt-genauigkeit 10 --punkt-radius 25
+
 Ergebnis im Zielordner:
     gokart.gpkg   Flächen, Taxa, Suchnamen, eigene Synonyme, Artnachweise,
-                  Biotoptypen-Kataloge (biotoptypen, biotop_schluessel) und Biotop-Zuordnungen
+                  Biotoptypen-Kataloge (biotoptypen, biotop_schluessel) und Biotop-Zuordnungen,
+                  Punktaufnahmen (aufnahme_punkte, Modul "punkte")
     gokart.qgs    QGIS-/QField-Projekt (Relation Fläche -> Artnachweise, Auswahllisten)
     gokart.qml    Projekt-Plugin (wird separat aus plugin/ kopiert, gleicher Name wie .qgs!)
 
@@ -33,6 +38,7 @@ from gokart_namen import normalisieren, varianten  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
 import biotope as B  # noqa: E402
 import module as M  # noqa: E402
+import punkte as P  # noqa: E402
 
 from qgis.core import (  # noqa: E402
     QgsApplication, QgsCoordinateReferenceSystem, QgsDefaultValue, QgsEditFormConfig,
@@ -317,13 +323,16 @@ def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None, zusatztax
         feld('wissenschaftlicher_name', QVariant.String), feld('deutscher_name', QVariant.String),
         feld('original_eingabe', QVariant.String), feld('erfasst_am', QVariant.String),
         feld('bemerkung', QVariant.String, 500),
-        feld('geaendert_am', QVariant.String), feld('ersetzt', QVariant.String)])   # Bearbeiten in QField (0.6)
+        feld('geaendert_am', QVariant.String), feld('ersetzt', QVariant.String),    # Bearbeiten in QField (0.6)
+        feld('punkt_id', QVariant.String, 40),                                       # Punktaufnahme statt Fläche (0.7)
+        feld('deckung', QVariant.String, 10), feld('anzahl', QVariant.String, 20),   # Zusatzangaben (0.7)
+        feld('phaenologie', QVariant.String, 20)])
     af = []
     tx_map = {t[0]: t for t in taxa}
     for flid, tid, am, bem, orig in erfasst:
         t = tx_map.get(tid)
         f = QgsFeature(an.fields())
-        f.setAttributes([flid, tid, t[1] if t else None, t[2] if t else None, orig, am, bem, None, None])
+        f.setAttributes([flid, tid, t[1] if t else None, t[2] if t else None, orig, am, bem] + [None] * 6)
         af.append(f)
     an.dataProvider().addFeatures(af)
     schreiben(an, gpkg, False)
@@ -334,6 +343,7 @@ def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None, zusatztax
         CREATE INDEX IF NOT EXISTS idx_suchnamen_schluessel ON suchnamen(schluessel);
         CREATE INDEX IF NOT EXISTS idx_taxon_id ON taxon(taxon_id);
         CREATE INDEX IF NOT EXISTS idx_artnachweise_flaeche ON artnachweise(flaeche_id);
+        CREATE INDEX IF NOT EXISTS idx_artnachweise_punkt ON artnachweise(punkt_id);
         CREATE INDEX IF NOT EXISTS idx_flaechen_id ON flaechen(flaeche_id);
     ''')
     con.commit()
@@ -343,11 +353,22 @@ def gpkg_erzeugen(db, gpkg, germansl=None, zusatz=None, flaechen=None, zusatztax
     print(f'GeoPackage: {len(tx_feats)} Taxa, Suchnamen {stat}, {len(ef)} eigene Synonyme, {len(af)} Artnachweise')
 
 
-def value_relation(layer, feldname, ziel, schluessel, wert, filter_ausdruck=''):
+def value_relation(layer, feldname, ziel, schluessel, wert, filter_ausdruck='', leer_erlaubt=False):
     layer.setEditorWidgetSetup(layer.fields().indexFromName(feldname), QgsEditorWidgetSetup('ValueRelation', {
         'Layer': ziel.id(), 'LayerName': ziel.name(), 'LayerSource': ziel.source(), 'LayerProviderName': 'ogr',
-        'Key': schluessel, 'Value': wert, 'AllowNull': False, 'OrderByValue': True,
+        'Key': schluessel, 'Value': wert, 'AllowNull': leer_erlaubt, 'OrderByValue': True,
         'UseCompleter': True, 'AllowMulti': False, 'FilterExpression': filter_ausdruck}))
+
+
+NULL_WERT = '{2839923C-8B7D-419E-B84B-CA2FE9B80EC7}'   # QGIS-Kennung für „kein Wert“ in Wertlisten
+
+
+def werteliste(layer, feldname, werte):
+    """Auswahlliste (ValueMap) mit leerem Eintrag – für Zusatzangaben wie Deckung."""
+    i = layer.fields().indexFromName(feldname)
+    if i >= 0:
+        layer.setEditorWidgetSetup(i, QgsEditorWidgetSetup('ValueMap', {
+            'map': [{'(leer)': NULL_WERT}] + [{w: w} for w in werte]}))
 
 
 def ausblenden(layer, *felder):
@@ -400,7 +421,13 @@ def projekt_erzeugen(ziel, gpkg):
     ausblenden(fl, 'fid')
 
     # Artnachweise-Formular
-    value_relation(an, 'flaeche_id', fl, 'flaeche_id', 'flaeche_id')
+    value_relation(an, 'flaeche_id', fl, 'flaeche_id', 'flaeche_id', leer_erlaubt=True)   # leer bei Punktaufnahmen
+    werteliste(an, 'deckung', P.DECKUNG)
+    werteliste(an, 'phaenologie', P.PHAENOLOGIE)
+    i = an.fields().indexFromName('punkt_id')
+    an.setConstraintExpression(i, '("flaeche_id" IS NULL) <> ("punkt_id" IS NULL)',
+                               'Genau eins von Fläche oder Punkt angeben')
+    an.setFieldConstraint(i, QgsFieldConstraints.ConstraintExpression, QgsFieldConstraints.ConstraintStrengthSoft)
     value_relation(an, 'taxon_id', tx, 'taxon_id', 'anzeige_name')
     ausblenden(an, 'fid', 'ersetzt')
     an.setDefaultValueDefinition(an.fields().indexFromName('erfasst_am'),
@@ -410,7 +437,8 @@ def projekt_erzeugen(ziel, gpkg):
         "attribute(get_feature('taxon','taxon_id',\"taxon_id\"),'wissenschaftlicher_name')", True))
     an.setDefaultValueDefinition(an.fields().indexFromName('deutscher_name'), QgsDefaultValue(
         "attribute(get_feature('taxon','taxon_id',\"taxon_id\"),'anzeige_name')", True))
-    an.setDisplayExpression('coalesce("deutscher_name", "wissenschaftlicher_name") || \' (\' || "flaeche_id" || \')\'')
+    an.setDisplayExpression('coalesce("deutscher_name", "wissenschaftlicher_name") || \' (\' || '
+                            'coalesce("flaeche_id", "punkt_id", \'?\') || \')\'')
     value_relation(es, 'taxon_id', tx, 'taxon_id', 'anzeige_name')
     ausblenden(es, 'fid', 'schluessel')
     es.setDisplayExpression('"synonym"')
@@ -478,12 +506,20 @@ def main():
     ap.add_argument('--ohne-biotope', action='store_true', help='keine Biotoptypen-Kataloge einspielen')
     ap.add_argument('--module', default=M.als_text(M.ALLE), metavar='LISTE',
                     help='was in QField erfasst wird, kommagetrennt aus arten, fotos, biotope (Standard: %(default)s)')
+    ap.add_argument('--zusatzangaben', default='', metavar='LISTE',
+                    help='Zusatzangaben, die QField nach jeder Art anbietet, kommagetrennt aus '
+                         'deckung, anzahl, phaenologie (Standard: keine)')
+    ap.add_argument('--punkt-genauigkeit', type=float, default=P.STANDARD_GENAUIGKEIT, metavar='METER',
+                    help='Punktaufnahmen: Warnung, wenn die GPS-Genauigkeit schlechter ist (Standard: %(default)s)')
+    ap.add_argument('--punkt-radius', type=float, default=P.STANDARD_RADIUS, metavar='METER',
+                    help='Punktaufnahmen: Hinweis „neue Aufnahme?“ ab dieser Entfernung (Standard: %(default)s)')
     ap.add_argument('--neu', action='store_true', help='vorhandenes gokart.gpkg überschreiben (Erfassungen gehen verloren!)')
     a = ap.parse_args()
     if a.leer and a.flaechen:
         raise SystemExit('--leer und --flaechen schließen sich aus.')
     try:
         module = M.pruefen(a.module)
+        zusatzangaben = P.zusatz_pruefen(a.zusatzangaben)
     except ValueError as e:
         raise SystemExit(str(e))
     if M.BIOTOPE not in module:
@@ -540,6 +576,14 @@ def main():
         if not seite.fotolayer_im_projekt():
             seite.fotolayer_eintragen()
 
+    # Punktaufnahmen: Punkt-Layer (KBS der Flächen) + Schwellwerte; Spalten in artnachweise gibt es immer
+    qgs = a.ziel / 'gokart.qgs'
+    if M.PUNKTE in module:
+        for t in P.einrichten(gpkg, qgs, CRS):
+            print(f'Punktaufnahmen: {t}')
+        B.qgs_variable_setzen(qgs, P.VAR_GENAUIGKEIT, f'{a.punkt_genauigkeit:g}')
+        B.qgs_variable_setzen(qgs, P.VAR_RADIUS, f'{a.punkt_radius:g}')
+    B.qgs_variable_setzen(qgs, P.VAR_ZUSATZ, ','.join(zusatzangaben))
     B.qgs_variable_setzen(a.ziel / 'gokart.qgs', M.VAR_MODULE, M.als_text(module))
     print('Erfassung in QField: ' + ', '.join(M.NAMEN[m] for m in M.ALLE if m in module))
 

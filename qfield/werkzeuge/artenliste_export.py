@@ -21,7 +21,7 @@ import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
-from artenliste import csv_schreiben, html_schreiben  # noqa: E402
+from artenliste import csv_schreiben, html_schreiben, punkt_ort  # noqa: E402
 
 M2_FELDER = ('flaeche_m2', 'Flaeche_m2', 'flaeche', 'Flaeche', 'area', 'flaeche_qm')
 
@@ -163,15 +163,26 @@ def daten_lesen(qgs):
                 'SELECT flaeche_id, datei, kommentar, aufgenommen_am FROM fotos ORDER BY aufgenommen_am'):
             fotos.setdefault(str(f_id), []).append(
                 {'datei': datei, 'kommentar': kommentar, 'am': auf, 'src': vorschau_uri(qgs.parent / (datei or ''))})
+    punkte = {}
+    if spalten(con, 'aufnahme_punkte'):
+        con.row_factory = sqlite3.Row
+        punkte = {r['punkt_id']: dict(r) for r in con.execute(
+            'SELECT punkt_id, flaeche_id, erfasst_am, gps_genauigkeit FROM aufnahme_punkte')}
+        con.row_factory = None
+    extra = [c if c in cols else 'NULL' for c in ('punkt_id', 'deckung', 'anzahl', 'phaenologie')]
     nachweise = []
-    for fid, tid, wiss, deutsch, ein, am, bem in con.execute(
-            f'SELECT "{fk}", taxon_id, wissenschaftlicher_name, deutscher_name, {eingabe}, erfasst_am, {bemerkung} '
-            f'FROM "{an["tabelle"]}"'):
-        name, m2 = flaechen.get(str(fid), (None, None))
+    for fid, tid, wiss, deutsch, ein, am, bem, pid, deck, anz, phae in con.execute(
+            f'SELECT "{fk}", taxon_id, wissenschaftlicher_name, deutscher_name, {eingabe}, erfasst_am, {bemerkung}, '
+            f'{", ".join(extra)} FROM "{an["tabelle"]}"'):
+        pname = None
+        if fid in (None, '') and pid:
+            fid, pname = punkt_ort(pid, punkte.get(pid))
+        name, m2 = flaechen.get(str(fid), (pname, None))
         autor, rang = taxa.get(tid, (None, None))
         nachweise.append({'flaeche_id': fid, 'flaeche_name': name, 'flaeche_m2': m2, 'taxon_id': tid,
                           'wiss': wiss, 'autor': autor, 'deutsch': deutsch, 'rang': rang,
-                          'eingabe': ein, 'erfasst_am': am, 'bemerkung': bem})
+                          'eingabe': ein, 'erfasst_am': am, 'bemerkung': bem, 'punkt_id': pid,
+                          'deckung': deck, 'anzahl': anz, 'phaenologie': phae})
     con.close()
     return nachweise, fotos, flaechen
 

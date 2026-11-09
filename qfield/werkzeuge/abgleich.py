@@ -29,7 +29,13 @@ Regeln:
   * Biotoptypen: Zuordnungen (Tabelle biotopzuordnung) sind eindeutig durch Fläche + Schlüssel + Code und werden
     wie Nachweise vereinigt (rolle, anteil, bemerkung werden ergänzt). Entfernen: --biotop-weglassen W-34:SH:WMy.
     Den Biotop-Katalog (biotoptypen, biotop_schluessel) und die Projektvariable gokart_biotop_schluessel gibt
-    der PC vor – sie kommen samt Layern ins Tablet-Zip.
+    der PC vor – sie kommen samt Layern ins Tablet-Zip. Ebenso gokart_module, gokart_zusatz,
+    gokart_punkt_genauigkeit und gokart_punkt_radius (sofern am PC gesetzt).
+  * Punktaufnahmen (Tabelle aufnahme_punkte, QField-Plugin ab 0.7): eindeutig durch punkt_id, werden vereinigt;
+    bei unterschiedlichem geaendert_am gewinnt der neuere Stand (auch die Position). Artnachweise an einem Punkt
+    haben statt flaeche_id die punkt_id – Schlüssel "@<punkt_id>:taxon_id" (z. B. für --weglassen).
+    Entfernen: --punkt-weglassen <punkt_id>. Fehlt die Tabelle auf einer Seite, wird sie angelegt (+ Layer).
+  * Zusatzangaben (deckung, anzahl, phaenologie) gehen wie die Bemerkung mit; fehlende Spalten werden angelegt.
   * Das aktuelle QField-Plugin aus qfield_plugin/ kommt automatisch mit ins Tablet-Zip (abschalten: --ohne-plugin).
 
 QGIS und QField vorher schließen bzw. das Projekt nicht geöffnet haben.
@@ -48,6 +54,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'qgis_plugin' / 'gokart_desktop'))
 import biotope as B  # noqa: E402
+import punkte as P  # noqa: E402
+import module as M  # noqa: E402
 from artenliste_export import layer_suchen, projekt_lesen  # noqa: E402
 
 INTERNE_IDS = {'fid', 'fid_1', 'ogc_fid'}   # werden nie übertragen, jede Datei vergibt eigene
@@ -59,10 +67,12 @@ FOTO_SQL = (f'CREATE TABLE "{FOTO_TABELLE}" (fid INTEGER PRIMARY KEY AUTOINCREME
             'lon REAL, lat REAL)')   # taxon_id bleibt frei (Standortfotos), für spätere Artfotos reserviert
 PLUGIN_ORDNER = Path(__file__).resolve().parents[2] / 'qfield_plugin'
 PLUGIN_QML = 'GoKart_Wohnung.qml'
-PLUGIN_DATEIEN = ('gokart_suche.js', 'gokart_biotop.js', 'gokart_icon.svg', 'gokart_foto.svg', 'gokart_biotop.svg')
+PLUGIN_DATEIEN = ('gokart_suche.js', 'gokart_biotop.js', 'gokart_zusatz.js', 'gokart_icon.svg', 'gokart_foto.svg',
+                  'gokart_biotop.svg')
 BIOTOP_FELDER = ('rolle', 'anteil', 'bemerkung')
-NACHWEIS_ZUSATZSPALTEN = (('geaendert_am', 'TEXT'), ('ersetzt', 'TEXT'))   # ab QField-Plugin 0.6
-NACHWEIS_FELDER = ('bemerkung', 'original_eingabe', 'ersetzt', 'geaendert_am')   # gehen bei "neuer gewinnt" mit
+NACHWEIS_ZUSATZSPALTEN = (('geaendert_am', 'TEXT'), ('ersetzt', 'TEXT')) + P.NACHWEIS_SPALTEN   # ab Plugin 0.6/0.7
+ZUSATZ_FELDER = tuple(P.ZUSATZ)
+NACHWEIS_FELDER = ('bemerkung', 'original_eingabe', 'ersetzt', 'geaendert_am') + ZUSATZ_FELDER   # "neuer gewinnt"
 
 
 TEMP_PRAEFIX = '.gokart_abgleich_'   # entpackte .qgs aus einer .qgz (liegt kurz neben der .qgz)
@@ -165,6 +175,8 @@ class Seite:
         self.fo = {'datei': self.an['datei'], 'tabelle': FOTO_TABELLE, 'name': FOTO_TABELLE}
         self.bz = {'datei': self.an['datei'], 'tabelle': B.T_ZUORDNUNG, 'name': B.T_ZUORDNUNG}
         self.bz_cols, self.bz_pk = [], []
+        self.pk_layer = {'datei': self.an['datei'], 'tabelle': P.T_PUNKTE, 'name': P.T_PUNKTE}
+        self.pp_cols, self.pp_pk = [], []
 
     @property
     def home(self):
@@ -185,7 +197,25 @@ class Seite:
     def nachweise(self):
         cols, pk, daten = self._lesen(self.an)
         self.an_cols, self.an_pk = cols, pk
-        return {(str(d.get(self.fk)), str(d.get('taxon_id'))): d for d in daten}
+        return {(P.ort_schluessel(d, self.fk), str(d.get('taxon_id'))): d for d in daten}
+
+    def nachweis_spalten(self, k):
+        """Schlüssel (Ort, taxon_id) -> (Spalten, Werte) für SQL; Punkt-Orte beginnen mit '@'."""
+        if str(k[0]).startswith('@'):
+            return ('punkt_id', 'taxon_id'), (str(k[0])[1:], k[1])
+        return (self.fk, 'taxon_id'), tuple(k)
+
+    def punkte(self):
+        """{punkt_id: Zeile} der Punktaufnahmen."""
+        if not self.hat_tabelle(P.T_PUNKTE):
+            self.pp_cols, self.pp_pk = [], []
+            return {}
+        cols, pk, daten = self._lesen(self.pk_layer)
+        self.pp_cols, self.pp_pk = cols, pk
+        return {str(d.get('punkt_id')): d for d in daten if d.get('punkt_id')}
+
+    def punkt_srs(self):
+        return P.punkt_srs(self.an['datei'])
 
     def fehlende_nachweisspalten(self):
         con = sqlite3.connect(self.an['datei'])
@@ -352,7 +382,7 @@ class Seite:
 def kurz(d, fk):
     name = d.get('deutscher_name') or d.get('wissenschaftlicher_name') or '?'
     am = str(d.get('erfasst_am') or '').replace('T', ' ')[:16]
-    return f'{d.get(fk)} · {name} ({am})'
+    return f'{P.ort_schluessel(d, fk)} · {name} ({am})'
 
 
 def ergaenzungen(a, b, felder):
@@ -404,9 +434,9 @@ def plugin_pruefen(tb):
     return [z.name for q, z in plugin_ziele(tb) if not z.is_file() or not filecmp.cmp(q, z, shallow=False)]
 
 
-def nachweis_abgleich(a, b):
+def nachweis_abgleich(a, b, felder=NACHWEIS_FELDER, ergaenzen=('bemerkung',) + ZUSATZ_FELDER):
     """Wie ergaenzungen(), aber mit geaendert_am: unterscheidet es sich, gewinnt der neuere Stand komplett
-    (NACHWEIS_FELDER, auch leere Werte). Sonst nur Bemerkung ergänzen bzw. Konflikt melden."""
+    (felder, auch leere Werte). Sonst nur Bemerkung/Zusatzangaben ergänzen bzw. Konflikt melden."""
     fuer_a, fuer_b, konflikt = [], [], []
     gleich_a, gleich_b = {}, {}
     for k in a:
@@ -418,11 +448,25 @@ def nachweis_abgleich(a, b):
             continue
         gewinner, ziel = (a[k], fuer_b) if za > zb else (b[k], fuer_a)
         verlierer = b[k] if za > zb else a[k]
-        for feld in NACHWEIS_FELDER:
+        for feld in felder:
             if feld in gewinner and (gewinner.get(feld) or None) != (verlierer.get(feld) or None):
                 ziel.append((k, feld, gewinner.get(feld)))
-    fa, fb, ko = ergaenzungen(gleich_a, gleich_b, ('bemerkung',))
+    fa, fb, ko = ergaenzungen(gleich_a, gleich_b, ergaenzen)
     return fuer_a + fa, fuer_b + fb, konflikt + ko
+
+
+def punkt_abgleich(a, b):
+    return nachweis_abgleich(a, b, P.PUNKT_FELDER, ('bemerkung', 'flaeche_id', 'biotoptyp'))
+
+
+def geom_umschreiben(d, srs_ziel):
+    """Punkt-Blob auf die srs_id der Zielseite umschreiben (GeoPackages können verschiedene IDs vergeben)."""
+    if srs_ziel is None or not d.get(P.GEOM):
+        return d
+    xy = P.punkt_xy(d[P.GEOM])
+    d = dict(d)
+    d[P.GEOM] = P.punkt_blob(xy[0], xy[1], srs_ziel) if xy else None
+    return d
 
 
 def ersetzte_nachweise(*seiten):
@@ -457,6 +501,8 @@ def main():
                     help='Fotoeintrag auf beiden Seiten entfernen (Bilddatei bleibt liegen)')
     ap.add_argument('--biotop-weglassen', action='append', default=[], metavar='FLÄCHE:SCHLÜSSEL:CODE',
                     help='Biotop-Zuordnung auf beiden Seiten entfernen')
+    ap.add_argument('--punkt-weglassen', action='append', default=[], metavar='PUNKT_ID',
+                    help='Punktaufnahme auf beiden Seiten entfernen (ihre Artnachweise mit --weglassen @PUNKT_ID:…)')
     ap.add_argument('--pc-projekt', metavar='DATEI', help='Projektdatei im PC-Ordner (bei mehreren .qgs/.qgz)')
     ap.add_argument('--tablet-projekt', metavar='DATEI', help='Projektdatei im Tablet-Export (bei mehreren)')
     ap.add_argument('--ohne-plugin', action='store_true', help='QField-Plugin im Tablet-Zip nicht aktualisieren')
@@ -539,6 +585,12 @@ def abgleichen(a, pc, tb, tablet_pfad):
     blayer_tb = biotop_pc and not set(B.LAYER_IDS.values()) <= B.qgs_layer_ids(tb.qgs)
     var_pc, var_tb = B.qgs_variable(pc.qgs, B.VAR_SCHLUESSEL), B.qgs_variable(tb.qgs, B.VAR_SCHLUESSEL)
     var_neu = bool(var_pc) and var_pc != var_tb
+    # Erfassungsmodule, Zusatzangaben und Punkt-Schwellwerte gibt der PC vor (nur wenn dort gesetzt)
+    pvars = {}
+    for name in (M.VAR_MODULE, P.VAR_ZUSATZ, P.VAR_GENAUIGKEIT, P.VAR_RADIUS):
+        w_pc, w_tb = B.qgs_variable(pc.qgs, name), B.qgs_variable(tb.qgs, name)
+        if w_pc not in (None, '') and w_pc != w_tb:
+            pvars[name] = (w_tb, w_pc)
     # Zwei verschiedene Hauptbiotope für dieselbe Fläche und denselben Schlüssel nach dem Abgleich?
     haupt = {}
     for k, d in list(b_pc.items()) + list(b_tb.items()):
@@ -546,11 +598,30 @@ def abgleichen(a, pc, tb, tablet_pfad):
             haupt.setdefault(k[:2], set()).add(k[2])
     haupt_doppelt = {k: v for k, v in haupt.items() if len(v) > 1}
 
+    # --- Punktaufnahmen (Tabelle aufnahme_punkte)
+    p_pc, p_tb = pc.punkte(), tb.punkte()
+    pweg = set(a.punkt_weglassen)
+    pnur_pc = [k for k in p_pc if k not in p_tb and k not in pweg]
+    pnur_tb = [k for k in p_tb if k not in p_pc and k not in pweg]
+    pupd_pc, pupd_tb, pkonflikt = punkt_abgleich(p_pc, p_tb)
+    pweg_pc = [k for k in pweg if k in p_pc]
+    pweg_tb = [k for k in pweg if k in p_tb]
+    ptab_pc = tb.hat_tabelle(P.T_PUNKTE) and not pc.hat_tabelle(P.T_PUNKTE)
+    ptab_tb = pc.hat_tabelle(P.T_PUNKTE) and not tb.hat_tabelle(P.T_PUNKTE)
+    player_pc = (pc.hat_tabelle(P.T_PUNKTE) or ptab_pc) and not P.qgs_layer_im_projekt(pc.qgs)
+    player_tb = (tb.hat_tabelle(P.T_PUNKTE) or ptab_tb) and not P.qgs_layer_im_projekt(tb.qgs)
+    # Nachweise an Punkten, die es auf keiner Seite (mehr) gibt
+    alle_punkte = (set(p_pc) | set(p_tb)) - pweg
+    verwaist = sorted({k[0] for k in list(n_pc) + list(n_tb)
+                       if k[0].startswith('@') and k[0][1:] not in alle_punkte and k not in weg})
+
     plugin_neu = [] if a.ohne_plugin else plugin_pruefen(tb)
 
     # --- Bericht
-    print(f'PC:     {len(n_pc)} Nachweise, {len(f_pc)} Fotos, {len(b_pc)} Biotope, {len(s_pc)} eigene Synonyme  ({pc.qgs})')
-    print(f'Tablet: {len(n_tb)} Nachweise, {len(f_tb)} Fotos, {len(b_tb)} Biotope, {len(s_tb)} eigene Synonyme  ({tablet_pfad})')
+    print(f'PC:     {len(n_pc)} Nachweise, {len(p_pc)} Punkte, {len(f_pc)} Fotos, {len(b_pc)} Biotope, '
+          f'{len(s_pc)} eigene Synonyme  ({pc.qgs})')
+    print(f'Tablet: {len(n_tb)} Nachweise, {len(p_tb)} Punkte, {len(f_tb)} Fotos, {len(b_tb)} Biotope, '
+          f'{len(s_tb)} eigene Synonyme  ({tablet_pfad})')
     for seite in (pc, tb):
         quellen = [f'Nachweise {seite.an["datei"].name}:{seite.an["tabelle"]}']
         if seite.es:
@@ -617,6 +688,28 @@ def abgleichen(a, pc, tb, tablet_pfad):
         print('Biotop-Tabellen werden am PC angelegt')
     if var_neu:
         print(f'Biotoptypen-Schlüssel fürs Tablet: {var_tb or "-"} → {var_pc}')
+    for name, (alt, neu) in pvars.items():
+        print(f'Projektvariable fürs Tablet: {name} {alt or "-"} → {neu}')
+    if pnur_pc or pnur_tb:
+        print(f'Punktaufnahmen: {len(pnur_pc)} nur PC, {len(pnur_tb)} nur Tablet → werden ergänzt')
+        for titel, keys, quelle in (('PC → Tablet', pnur_pc, p_pc), ('Tablet → PC', pnur_tb, p_tb)):
+            for k in sorted(keys):
+                d = quelle[k]
+                am = str(d.get('erfasst_am') or '').replace('T', ' ')[:16]
+                print(f'  + {titel}: {k} ({am}, ±{d.get("gps_genauigkeit") or "?"} m)   [--punkt-weglassen {k}]')
+    for titel, upd in (('PC → Tablet', pupd_tb), ('Tablet → PC', pupd_pc)):
+        for k, feld, wert in upd:
+            print(f'  ~ Punkt {feld} {titel}: {k}' + ('' if feld == P.GEOM else f': {wert}'))
+    for k, feld, w_pc, w_tb in pkonflikt:
+        print(f'⚠ Punkt {feld} unterschiedlich, bleibt wie es ist: {k}\n     PC: {w_pc!r}  Tablet: {w_tb!r}')
+    if pweg_pc or pweg_tb:
+        print(f'Punktaufnahmen werden entfernt: {len(pweg_pc)} PC / {len(pweg_tb)} Tablet')
+    for o in verwaist:
+        print(f'⚠ Artnachweise an {o}, aber der Punkt fehlt auf beiden Seiten')
+    if ptab_pc or ptab_tb or player_pc or player_tb:
+        print('Punkt-Tabelle/-Layer wird angelegt: ' + ', '.join(
+            t for t, ja in (('Tabelle PC', ptab_pc), ('Tabelle Tablet', ptab_tb),
+                            ('Layer PC-Projekt', player_pc), ('Layer Tablet-Projekt', player_tb)) if ja))
     if plugin_neu:
         print(f'QField-Plugin wird aktualisiert: {", ".join(plugin_neu)}')
     if reg_pc or reg_tb:
@@ -627,7 +720,9 @@ def abgleichen(a, pc, tb, tablet_pfad):
                   or fupd_pc or fupd_tb or fweg_pc or fweg_tb or datei_zum_pc or datei_zum_tb
                   or syn_nur_pc or syn_nur_tb or tabelle_pc or tabelle_tb or layer_tb or plugin_neu
                   or reg_pc or reg_tb or bnur_pc or bnur_tb or bupd_pc or bupd_tb or bweg_pc or bweg_tb
-                  or kat_neu or btab_pc or btab_tb or blayer_tb or var_neu or spalten_pc or spalten_tb)
+                  or kat_neu or btab_pc or btab_tb or blayer_tb or var_neu or spalten_pc or spalten_tb
+                  or pnur_pc or pnur_tb or pupd_pc or pupd_tb or pweg_pc or pweg_tb
+                  or ptab_pc or ptab_tb or player_pc or player_tb or pvars)
     if nichts:
         print('\n✓ Beide Stände sind gleich.')
         return
@@ -647,6 +742,24 @@ def abgleichen(a, pc, tb, tablet_pfad):
             d[seite.fk] = d.pop(quelle_fk, None)
         return d
 
+    def punkte_anwenden(seite, quelle, neu, upd, weg, tabelle, layer):
+        if tabelle:
+            srs = quelle.punkt_srs()
+            authid = P.srs_info(quelle.an['datei'], srs)[0] if srs is not None else None
+            P.tabelle_anlegen(seite.an['datei'], authid)
+        if layer:
+            P.qgs_layer_eintragen(seite.qgs, seite.an['datei'])
+        seite.punkte()                                         # Spaltenliste (neu) lesen
+        if not seite.pp_cols:
+            return
+        srs = seite.punkt_srs()
+        neu = [geom_umschreiben(quelle_punkte[k], srs) for k in neu]
+        upd = [(k, feld, geom_umschreiben({P.GEOM: wert}, srs)[P.GEOM] if feld == P.GEOM else wert)
+               for k, feld, wert in upd]
+        if neu or weg:
+            seite.schreiben(seite.pk_layer, seite.pp_cols, seite.pp_pk, neu, [(k,) for k in weg], ('punkt_id',))
+        seite.aktualisieren(seite.pk_layer, [((k,), feld, wert) for k, feld, wert in upd], ('punkt_id',))
+
     def biotope_anwenden(seite, neu, upd, weg, tabelle):
         if tabelle:
             B.tabellen_anlegen(seite.an['datei'])
@@ -661,8 +774,13 @@ def abgleichen(a, pc, tb, tablet_pfad):
         if tabelle:
             seite.fototabelle_anlegen()
         seite.fotos()                                          # Spaltenliste (neu) lesen
-        seite.schreiben(seite.an, seite.an_cols, seite.an_pk, n_neu, n_weg, (seite.fk, 'taxon_id'))
-        seite.aktualisieren(seite.an, n_upd, (seite.fk, 'taxon_id'))
+        seite.schreiben(seite.an, seite.an_cols, seite.an_pk, n_neu)
+        for k in n_weg:
+            sp, werte = seite.nachweis_spalten(k)
+            seite.schreiben(seite.an, seite.an_cols, seite.an_pk, [], [werte], sp)
+        for k, feld, wert in n_upd:
+            sp, werte = seite.nachweis_spalten(k)
+            seite.aktualisieren(seite.an, [(werte, feld, wert)], sp)
         seite.schreiben(seite.fo, seite.fo_cols, seite.fo_pk, f_neu, [(k,) for k in f_weg], ('datei',))
         seite.aktualisieren(seite.fo, [((k,), feld, wert) for k, feld, wert in f_upd], ('datei',))
         if seite.es and syn_neu:
@@ -672,11 +790,13 @@ def abgleichen(a, pc, tb, tablet_pfad):
             shutil.copy2(quelle_home / f, seite.home / f)
 
     print('\nPC-Projekt aktualisieren …')
-    sichern(pc_dateien + ([pc.datei.original] if btab_pc else []))
+    sichern(pc_dateien + ([pc.datei.original] if (btab_pc or player_pc) else []))
     anwenden(pc, [fuer(pc, n_tb[k]) for k in nur_tb], upd_pc, weg_pc,
              [f_tb[k] for k in fnur_tb], fupd_pc, fweg_pc, [s_tb[k] for k in syn_nur_tb],
              datei_zum_pc, tb.home, tabelle_pc)
     biotope_anwenden(pc, [b_tb[k] for k in bnur_tb], bupd_pc, bweg_pc, btab_pc)
+    quelle_punkte = p_tb
+    punkte_anwenden(pc, tb, pnur_tb, pupd_pc, pweg_pc, ptab_pc, player_pc)
     if btab_pc:
         B.qgs_layer_eintragen(pc.qgs, pc.an['datei'])
     pc.datei.zurueckschreiben()                      # .qgz: geänderte .qgs wieder einpacken
@@ -688,10 +808,14 @@ def abgleichen(a, pc, tb, tablet_pfad):
     if kat_neu or btab_tb:
         tb.katalog_kopieren(pc)
     biotope_anwenden(tb, [b_pc[k] for k in bnur_pc], bupd_tb, bweg_tb, btab_tb)
+    quelle_punkte = p_pc
+    punkte_anwenden(tb, pc, pnur_pc, pupd_tb, pweg_tb, ptab_tb, player_tb)
     if blayer_tb:
         B.qgs_layer_eintragen(tb.qgs, tb.an['datei'])
     if var_neu:
         B.qgs_variable_setzen(tb.qgs, B.VAR_SCHLUESSEL, var_pc)
+    for name, (_alt, neu) in pvars.items():
+        B.qgs_variable_setzen(tb.qgs, name, neu)
     (tb.home / FOTO_ORDNER).mkdir(exist_ok=True)
     if layer_tb:
         tb.fotolayer_eintragen()
@@ -708,8 +832,9 @@ def abgleichen(a, pc, tb, tablet_pfad):
             if p.is_file() and not p.name.endswith(('-wal', '-shm', '.bak', '~')):
                 z.write(p, p.relative_to(basis))
         z.writestr(FOTO_ORDNER + '/', '')          # leeren Fotoordner mitnehmen
-    print(f'\n✓ Fertig. PC: {len(pc.nachweise())} Nachweise / {len(pc.fotos())} Fotos / {len(pc.biotope())} Biotope, '
-          f'Tablet: {len(tb.nachweise())} Nachweise / {len(tb.fotos())} Fotos / {len(tb.biotope())} Biotope')
+    print(f'\n✓ Fertig. PC: {len(pc.nachweise())} Nachweise / {len(pc.punkte())} Punkte / {len(pc.fotos())} Fotos / '
+          f'{len(pc.biotope())} Biotope, Tablet: {len(tb.nachweise())} Nachweise / {len(tb.punkte())} Punkte / '
+          f'{len(tb.fotos())} Fotos / {len(tb.biotope())} Biotope')
     print(f'→ Fürs Tablet: {ziel}')
 
 

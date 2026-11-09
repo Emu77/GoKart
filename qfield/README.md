@@ -16,6 +16,7 @@ Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen od
 | `werkzeuge/biotope_einspielen.py` | Biotoptypen-Kataloge (Bund/Länder) in ein Projekt einspielen, Schlüssel setzen |
 | `werkzeuge/biotope_katalog_import.py` | Katalog-CSV aus Original-PDF/Excel erzeugen oder ergänzen |
 | `test/qml_harness_bearbeiten.py` | Bearbeiten von Artnachweisen (QField-Simulation, eigenes Mini-Projekt) |
+| `test/qml_harness_punkte.py`, `test/test_zusatz.js` | Punktaufnahmen + Zusatzangaben (QField-Simulation) und Sprach-Nachsatz (Node) |
 | `test/test_biotop.js`, `test/qml_harness_biotope.py` | Biotop-Suche (Node) und Biotop-Dialog (QField-Simulation) |
 
 ## Datenmodell (`gokart.gpkg`, EPSG:25833)
@@ -30,6 +31,11 @@ Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen od
 - `biotop_schluessel`, `biotoptypen`: Biotoptypen-Kataloge (Referenz, schreibgeschützt), Quelle: `qgis_plugin/gokart_desktop/biotope_kataloge/`
 - `biotopzuordnung`: `flaeche_id`, `schluessel`, `code`, `name`, `rolle` (Haupt/Neben), `anteil`, `bund_code`, `original_eingabe`, `erfasst_am`, `bemerkung`
 - Projektvariable `gokart_biotop_schluessel` (z. B. `SH`): welcher Schlüssel im Projekt gilt
+- `aufnahme_punkte` (Punkt, KBS wie die Flächen): `punkt_id` (eindeutig, z. B. `P-20261107-141233-k7x2`),
+  `erfasst_am`, `geaendert_am`, `gps_genauigkeit`, `hoehe`, `pos_quelle`, `biotoptyp`, `flaeche_id` (optional), `bemerkung`
+- `artnachweise` zusätzlich: `punkt_id` (statt `flaeche_id` bei Punktaufnahmen), `deckung`, `anzahl`, `phaenologie`
+  – fehlende Spalten/Tabelle ergänzt `abgleich.py --ausfuehren`; Schlüssel einer Punkt-Art im Abgleich: `@<punkt_id>:taxon_id`
+- Projektvariablen `gokart_punkt_genauigkeit`, `gokart_punkt_radius`, `gokart_zusatz` (siehe `qgis_plugin/gokart_desktop/punkte.py`)
 
 ## Auf dem Gerät nutzen (SHIFTphone / Tablet)
 

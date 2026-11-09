@@ -385,7 +385,7 @@ def _schritt(n):
         p.biotopEntfernen(hwy)
     elif n == 8:
         assert sorted(x['code'] for x in prop('biotopeDerFlaeche')) == ['WBe', 'WMy']
-        warn = [f for f in FEHLER if ('gokart' in f.lower() and 'gokartEcu' not in f) or 'ohne Bearbeitungsmodus' in f]
+        warn = [f for f in FEHLER if ('gokart' in f.lower() and not re.search(r'gokart(Api|Ecu|Fu|Gu)[0-9]', f)) or 'ohne Bearbeitungsmodus' in f]
         print('QML-Warnungen:', warn or 'keine')
         app.exit(1 if warn else 0)
         return

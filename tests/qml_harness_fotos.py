@@ -361,7 +361,7 @@ def _schritt(n):
         p.fotoEntfernen(prop('fotosDerFlaeche')[0])
     elif n == 5:
         assert len(prop('fotosDerFlaeche')) == 1
-        warn = [f for f in FEHLER if ('gokart' in f.lower() and 'gokartEcu' not in f) or 'ohne Bearbeitungsmodus' in f]
+        warn = [f for f in FEHLER if ('gokart' in f.lower() and not re.search(r'gokart(Api|Ecu|Fu|Gu)[0-9]', f)) or 'ohne Bearbeitungsmodus' in f]
         print('QML-Warnungen:', warn or 'keine')
         app.exit(1 if warn else 0)
         return

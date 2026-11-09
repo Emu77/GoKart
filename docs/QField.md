@@ -103,8 +103,13 @@ python3 tests/testdaten_export.py qfield_projekt/gokart.gpkg testdaten.json
 node tests/test_suche.js testdaten.json
 QT_QPA_PLATFORM=offscreen python3 tests/qml_harness.py qfield_projekt_kopie
 node tests/test_biotop.js
-QT_QPA_PLATFORM=offscreen python3 tests/qml_harness_biotope.py projekt_kopie   # gokart.qml = qfield_plugin/gokart.qml
+QT_QPA_PLATFORM=offscreen python3 tests/qml_harness_biotope.py projekt_kopie
+QT_QPA_PLATFORM=offscreen python3 tests/qml_harness_fotos.py projekt_kopie
+QT_QPA_PLATFORM=offscreen python3 tests/qml_harness_bearbeiten.py     # eigenes Mini-Projekt
+QT_QPA_PLATFORM=offscreen python3 tests/qml_harness_punkte.py         # eigenes Mini-Projekt
+node tests/test_zusatz.js
 ```
+`projekt_kopie` = Kopie eines mit `werkzeuge/build_gokart_projekt.py` gebauten Projekts (mit Plugin).
 `qml_harness.py` schreibt in das GeoPackage, deshalb nur mit einer **Kopie** ausführen. Benötigt: `pip install PySide6-Essentials`.
 
 ## Plugin in vorhandene Projekte übernehmen

@@ -51,6 +51,69 @@ def flaechen_layer(pfad, layername=None):
     return lyr
 
 
+ID_NAMEN = ('flaeche_id', 'flaechen_id', 'flaechen_nr', 'biotop_nr', 'biotopnr', 'bnr', 'nr', 'id', 'objectid',
+            'objekt_id', 'obj_nr', 'fid')
+NAME_NAMEN = ('name', 'bezeich', 'bezeichnung', 'bt_text', 'biotop', 'biotoptyp', 'typ', 'raum', 'flurname')
+
+
+def _eindeutig(layer, feld, grenze=50000):
+    werte = set()
+    for i, f in enumerate(layer.getFeatures()):
+        if i >= grenze:
+            return True
+        v = f[feld]
+        s = '' if v is None else str(v).strip()
+        if s in ('', 'NULL') or s in werte:
+            return False
+        werte.add(s)
+    return bool(werte)
+
+
+def id_feld_vorschlag(layer):
+    """Eindeutiges Feld, das nach ID/Nummer aussieht – sonst None (= fortlaufend nummerieren).
+    Flächengrößen (AREA, SHAPE_Area …) werden nie vorgeschlagen."""
+    felder = layer.fields().names()
+    klein = {f.lower(): f for f in felder}
+    kandidaten = [klein[n] for n in ID_NAMEN if n in klein]
+    kandidaten += [f for f in felder if f not in kandidaten and
+                   (f.lower().endswith(('nr', '_id', 'id')) or f.lower().startswith(('nr', 'id_')))]
+    for f in kandidaten:
+        if _eindeutig(layer, f):
+            return f
+    return None
+
+
+def name_feld_vorschlag(layer):
+    felder = layer.fields().names()
+    klein = {f.lower(): f for f in felder}
+    for n in NAME_NAMEN:
+        if n in klein:
+            return klein[n]
+    return next((f for f in felder if 'bez' in f.lower() or 'name' in f.lower()), None)
+
+
+def ansicht_und_transformation(p, fl):
+    """Startausschnitt auf die Flächen (QGIS und QField öffnen dort) und feste Umrechnung für die
+    OSM-Hintergrundkarte, damit QGIS beim Öffnen nicht nach einer Transformation fragt."""
+    from qgis.core import QgsDatumTransform, QgsReferencedRectangle
+    ziel = p.crs()
+    if fl is not None and fl.featureCount() > 0:
+        ext = fl.extent()
+        ext.scale(1.05)
+        p.viewSettings().setDefaultViewExtent(QgsReferencedRectangle(ext, fl.crs()))
+    ctx = p.transformContext()
+    for quelle in {l.crs().authid() for l in p.mapLayers().values()} - {ziel.authid(), ''}:
+        q = QgsCoordinateReferenceSystem(quelle)
+        try:
+            ops = QgsDatumTransform.operations(q, ziel)
+        except Exception:
+            continue
+        nutzbar = [o for o in ops if o.proj and getattr(o, 'isAvailable', True)]   # ohne fehlende Gitterdateien
+        if len(ops) > 1 and nutzbar:
+            ctx.addCoordinateOperation(q, ziel, nutzbar[0].proj, True)
+    p.setTransformContext(ctx)
+
+
 def katalog_auswahl():
     """[(schluessel, anzeigename)] der im Plugin mitgelieferten Biotop-Kataloge (aktuelle zuerst)."""
     liste = []
@@ -127,6 +190,7 @@ def projekt_anlegen(e, vorlage):
     build.projekt_erzeugen(ordner, gpkg)
     p = QgsProject.instance()
     p.setTitle(e.get('titel') or ordner.name)
+    ansicht_und_transformation(p, next(iter(p.mapLayersByName('flaechen')), None))
     p.write(str(qgs))
     p.clear()
     QApplication.processEvents()
@@ -362,10 +426,9 @@ class NeuesProjektDialog(QDialog):
             self.name_feld.addItem('(keine)', KEINS)
             for f in felder:
                 self.name_feld.addItem(f, f)
-            tipp = next((f for f in felder if f.lower() in ('flaeche_id', 'id', 'nr', 'biotop_nr', 'flaechen_nr')), None)
-            if tipp:
-                self.id_feld.setCurrentIndex(self.id_feld.findData(tipp))
-            name_tipp = next((f for f in felder if f.lower() in ('name', 'bezeichnung', 'bt_text', 'raum')), None)
+            tipp = id_feld_vorschlag(self.quelle)
+            self.id_feld.setCurrentIndex(self.id_feld.findData(tipp if tipp else AUTO))
+            name_tipp = name_feld_vorschlag(self.quelle)
             if name_tipp:
                 self.name_feld.setCurrentIndex(self.name_feld.findData(name_tipp))
         self.id_feld.blockSignals(False)

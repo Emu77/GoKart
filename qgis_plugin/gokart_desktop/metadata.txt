@@ -1,13 +1,14 @@
 [general]
 name=GoKart Desktop
 qgisMinimumVersion=3.22
-version=0.8.0
+version=0.8.1
 Author=GoKart Projekt
 email=
 description=Pflanzenarten und Biotoptypen (Bund/Länder-Schlüssel) Flächen zuordnen; Offline-Spracherkennung optional über Vosk
 about=QGIS Desktop Plugin für Linux und Windows. Legt GoKart-Projekte an, verpackt sie für QField und spielt Tablet-Erfassungen wieder ein – ohne Kommandozeile.
 category=Plugins
 experimental=True
-changelog=0.8.0: Alles im Plugin – „Neues Projekt…“ (Assistent mit mitgelieferter Artenliste), „Fürs Tablet…“ (QField-ZIP inkl. QField-Plugin), „Vom Tablet…“ (Abgleich mit Vorschau), „Spracherkennung einrichten…“ (Vosk-Pakete und deutsches Modell per Knopf)
+changelog=0.8.1: Assistent erkennt ID-/Namensfelder besser (z. B. BNR, BEZEICH; nie AREA), zoomt auf die Flächen, keine Transformations-Rückfrage für die OSM-Karte; QField zeigt Diagnose nur bei Fehlern
+    0.8.0: Alles im Plugin – „Neues Projekt…“ (Assistent mit mitgelieferter Artenliste), „Fürs Tablet…“ (QField-ZIP inkl. QField-Plugin), „Vom Tablet…“ (Abgleich mit Vorschau), „Spracherkennung einrichten…“ (Vosk-Pakete und deutsches Modell per Knopf)
     0.7.0: Punktaufnahmen (GPS-Punkte ohne Fläche) und Zusatzangaben je Art (Deckung, Anzahl, Phänologie) im Einrichtungsdialog; „Punkte Flächen zuordnen“; Artenliste mit Punkten und Zusatzangaben
     0.5.0: Biotoptypen – Schlüssel (Bund/Länder) im Einrichtungsdialog wählen, Kataloge einspielen, Haupt-/Nebenbiotop je Fläche erfassen (Text oder Sprache)

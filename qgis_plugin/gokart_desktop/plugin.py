@@ -927,6 +927,13 @@ class GoKartDock(QDockWidget):
             QMessageBox.warning(self, 'GoKart', f'Projekt angelegt, konnte aber nicht geöffnet werden:\n{qgs}')
             return
         neues_projekt_verknuepfen()
+        ext = QgsProject.instance().viewSettings().defaultViewExtent()
+        if not ext.isEmpty():
+            from qgis.core import QgsCoordinateTransform
+            tr = QgsCoordinateTransform(ext.crs(), self.iface.mapCanvas().mapSettings().destinationCrs(),
+                                        QgsProject.instance())
+            self.iface.mapCanvas().setExtent(tr.transformBoundingBox(ext))
+            self.iface.mapCanvas().refresh()
         self.reload()
         QMessageBox.information(
             self, 'GoKart – Projekt angelegt',

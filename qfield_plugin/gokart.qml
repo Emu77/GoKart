@@ -1753,7 +1753,7 @@ Item {
             // --- Diagnose des letzten Speicherns (hilft bei der Fehlersuche im Gelände)
             Label {
                 Layout.fillWidth: true
-                visible: plugin.diagnose !== ''
+                visible: plugin.diagnoseFehler   // nur bei Fehlern (Ablauf steht weiter in plugin.diagnose)
                 text: 'Diagnose: ' + plugin.diagnose
                 wrapMode: Text.Wrap
                 font.pixelSize: 11

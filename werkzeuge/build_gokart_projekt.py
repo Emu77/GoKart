@@ -35,7 +35,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from gokart_namen import normalisieren, varianten  # noqa: E402
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'qgis_plugin' / 'gokart_desktop'))
+_PLUGIN = Path(__file__).resolve().parents[1] / 'qgis_plugin' / 'gokart_desktop'
+sys.path.insert(0, str(_PLUGIN if _PLUGIN.is_dir() else Path(__file__).resolve().parents[1]))   # Repo bzw. im Plugin-ZIP
 import biotope as B  # noqa: E402
 import module as M  # noqa: E402
 import punkte as P  # noqa: E402

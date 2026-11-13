@@ -1,14 +1,14 @@
 GoKart Desktop – QGIS-Plugin (Windows / Linux)
 ==============================================
 
-Erfassung von Pflanzenarten und Biotoptypen (Haupt-/Nebenbiotop) je Kartierfläche.
-Die Flächen bringt jede/r Kartierer/in selbst mit (Shape, GeoPackage …).
+Erfassung von Pflanzenarten und Biotoptypen (Haupt-/Nebenbiotop) je Kartierfläche – am PC und mit QField
+im Gelände. Ab Version 0.8 ist alles im Plugin enthalten: keine Kommandozeile, keine Zusatzdateien.
 
 Voraussetzungen
 ---------------
 - QGIS ab 3.22 (Windows: OSGeo4W oder Standalone-Installer, Linux: Paket/Flatpak)
-- gokart.gpkg (GoKart-Vorlage mit Artenliste, Artnachweisen und Biotop-Tabellen,
-  wird separat weitergegeben)
+- Tablet/Smartphone mit QField (Android oder iOS)
+- eigene Kartierflächen als Shape, GeoPackage o. Ä. (Polygone) – oder keine, dann nur Punktaufnahmen
 
 Installation
 ------------
@@ -17,34 +17,49 @@ Installation
 3. Unter Erweiterungen → Installiert ggf. „Experimentelle Erweiterungen zeigen“ aktivieren
    und „GoKart Desktop“ anhaken.
 
-Einrichten (einmal je Projekt)
-------------------------------
-1. Neues QGIS-Projekt, eigene Flächen-Shape laden (Polygone, Feld mit eindeutiger Flächen-ID).
-2. gokart.gpkg per Drag & Drop laden; mindestens die Layer „taxon“, „suchnamen“,
-   „eigene_synonyme“ und „artnachweise“ übernehmen (Layernamen nicht ändern).
-   Die Biotop-Layer lädt das Plugin beim Einrichten selbst.
-3. Menü Erweiterungen → GoKart → „GoKart: Projekt einrichten…“
-   - Erfassen: Pflanzenarten / Standortfotos / Biotoptypen anhaken – nur diese Knöpfe erscheinen
-     später in QField (Projektvariable gokart_module). Bei Fotos legt das Plugin die Tabelle „fotos“ an.
-   - Flächen: eigener Flächenlayer + Schlüsselfeld (eindeutige ID) + Anzeigefeld
-   - Artnachweise: Layer „artnachweise“, Verweis auf Fläche „flaeche_id“
-   - Biotoptypen: „Kataloge einspielen / aktualisieren“, dann Schlüssel wählen (z. B. SH, NI)
-4. Projekt speichern.
+Ablauf
+------
+Alles über die drei Knöpfe oben im GoKart-Fenster (oder Menü Erweiterungen → GoKart):
 
-Erfassen: Fläche in der Karte markieren → „Auswahl aus Karte“, Art suchen → „Art speichern“;
-Biotoptyp suchen → „Als Hauptbiotop“ / „Als Nebenbiotop“. Export: Artnachweise als CSV, Artenliste je Fläche (CSV/HTML).
+1. „Neues Projekt…“
+   Name, Speicherort, Flächen-Datei mit ID-Feld (oder fortlaufend nummerieren), was erfasst wird
+   (Arten, Fotos, Biotoptypen, Punktaufnahmen), Zusatzangaben, Biotop-Schlüssel.
+   Ergebnis: ein Projektordner mit gokart.gpkg (Artenliste + Flächen + Erfassungstabellen) und gokart.qgs –
+   das Projekt ist sofort eingerichtet und geöffnet.
+
+2. „Fürs Tablet…“
+   Verpackt das Projekt als ZIP für QField (mit dem aktuellen QField-Plugin). ZIP aufs Tablet bringen
+   (USB, Mail, Messenger, Cloud) → QField: „Projekt aus ZIP importieren“ → Projekt öffnen →
+   dem GoKart-Plugin vertrauen. QGIS muss dafür nicht geschlossen werden.
+
+3. „Vom Tablet…“
+   In QField den Projektordner teilen/senden (ZIP) oder per USB kopieren, dann hier ZIP oder Ordner wählen.
+   Zuerst kommt eine Vorschau; „Ja“ ergänzt die Erfassungen in beide Richtungen: das PC-Projekt wird
+   aktualisiert (Sicherung *.bak), fürs Tablet entsteht ein neues ZIP.
+
+Am PC erfassen: Fläche in der Karte markieren → „Auswahl aus Karte“, Art suchen → „Art speichern“;
+Biotoptyp suchen → „Als Hauptbiotop“ / „Als Nebenbiotop“. Export: Artnachweise als CSV,
+Artenliste je Fläche (CSV/HTML).
+
+Bestehende Projekte (eigene Shape + gokart.gpkg von Hand geladen) gehen weiter über „Einrichten…“.
 
 Spracheingabe (optional, offline)
 ---------------------------------
-- Windows: OSGeo4W-Shell als Administrator → python -m pip install vosk sounddevice
-- Linux:   python3 -m venv ~/gokart-venv && ~/gokart-venv/bin/pip install vosk sounddevice
-- Deutsches Vosk-Modell (z. B. vosk-model-small-de-0.15) von https://alphacephei.com/vosk/models
-  herunterladen und entpacken; beim ersten Klick aufs Mikrofon den Ordner auswählen.
+Erster Klick auf „● Sprechen“ (oder Menü GoKart → „Spracherkennung einrichten…“) öffnet die Einrichtung:
+- „Pakete installieren“: vosk + sounddevice landen im QGIS-Profil (Ordner gokart/python),
+  ohne Administratorrechte. Linux: fehlt PortAudio, einmal  sudo apt install libportaudio2
+- „Modell herunterladen“: deutsches Vosk-Modell vosk-model-small-de-0.15 (ca. 45 MB).
+  Ohne Internet: Modell von https://alphacephei.com/vosk/models anderswo laden, entpacken und
+  „Vorhandenes Modell wählen…“.
+Klappt die Installation nicht: Windows OSGeo4W-Shell bzw. Linux-Terminal:  python -m pip install vosk sounddevice
+In QField wird über das Diktat der Tastatur gesprochen – dort ist nichts einzurichten.
 
 Hinweise
 --------
 - Linux + NTFS-Partition (Dual-Boot): Projekt besser auf ext4 ablegen oder in QGIS unter
   Einstellungen → Optionen → Erweitert „walForSqlite3“ = false setzen, sonst können
   Änderungen in der GeoPackage verloren gehen.
+- Die Artenliste (vorlage/gokart.gpkg) beruht auf BfN-Skript 519 und GermanSL – das Plugin-ZIP
+  direkt an die Kartierer/innen geben und nicht öffentlich hochladen, solange die Lizenz nicht geklärt ist.
 - Die Biotoptypen-Kataloge (Ordner biotope_kataloge) stammen aus den veröffentlichten
   Kartieranleitungen der Länder; Quellen siehe biotope_kataloge/README.md.

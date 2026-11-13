@@ -35,6 +35,9 @@ from qgis.gui import QgsMapLayerComboBox, QgsFieldComboBox
 from . import biotope as B
 from . import module as M
 from . import punkte as P
+from . import vosk_einrichten as VE
+
+VE.pakete_einbinden()   # vosk/sounddevice aus dem GoKart-Paketordner (Knopf „Spracherkennung einrichten“)
 
 try:  # QGIS >= 3.34
     from qgis.core import Qgis
@@ -210,6 +213,62 @@ def punkte_zuordnen(pl, fl, key, alle=False):
             raise RuntimeError('Zuordnung konnte nicht gespeichert werden')
         pl.triggerRepaint()
     return gesetzt, len(rand), ausserhalb, rand
+
+
+def punkt_relation(pl, nl):
+    """Punktaufnahme 1:n Artnachweise – QGIS/QField zeigen die Arten im Punktformular."""
+    rm = QgsProject.instance().relationManager()
+    rel = QgsRelation()
+    rel.setId(PUNKT_RELATION_ID)
+    rel.setName('Punktaufnahme → Artnachweise')
+    rel.setReferencedLayer(pl.id())
+    rel.setReferencingLayer(nl.id())
+    rel.addFieldPair('punkt_id', 'punkt_id')
+    if rel.isValid():
+        rm.removeRelation(PUNKT_RELATION_ID)
+        rm.addRelation(rel)
+
+
+def biotop_relation(fl, key):
+    """Fläche 1:n Biotop-Zuordnungen – damit QField sie im Flächenformular zeigt."""
+    zl = next(iter(QgsProject.instance().mapLayersByName(B.T_ZUORDNUNG)), None)
+    if zl is None:
+        return
+    rm = QgsProject.instance().relationManager()
+    rel = QgsRelation()
+    rel.setId(BIOTOP_RELATION_ID)
+    rel.setName('Fläche → Biotoptypen')
+    rel.setReferencedLayer(fl.id())
+    rel.setReferencingLayer(zl.id())
+    rel.addFieldPair('flaeche_id', key)
+    if rel.isValid():
+        rm.removeRelation(BIOTOP_RELATION_ID)
+        rm.addRelation(rel)
+
+
+def neues_projekt_verknuepfen():
+    """Nach dem Assistenten: Projektvariablen mit Layer-IDs und Beziehungen setzen (wie „Einrichten…“)."""
+    p = QgsProject.instance()
+    fl = next(iter(p.mapLayersByName('flaechen')), None)
+    nl = next(iter(p.mapLayersByName('artnachweise')), None)
+    if fl is None or nl is None:
+        return False
+    ECU.setProjectVariable(p, VAR_AREA_LAYER, fl.id())
+    ECU.setProjectVariable(p, VAR_AREA_KEY, 'flaeche_id')
+    ECU.setProjectVariable(p, VAR_AREA_LABEL, 'name')
+    ECU.setProjectVariable(p, VAR_OBS_LAYER, nl.id())
+    ECU.setProjectVariable(p, VAR_OBS_FK, 'flaeche_id')
+    rel = next((r for r in p.relationManager().relations().values()
+                if r.referencingLayerId() == nl.id() and r.referencedLayerId() == fl.id()), None)
+    if rel is not None:
+        ECU.setProjectVariable(p, VAR_RELATION, rel.id())
+    module = M.lesen(project_var(M.VAR_MODULE))
+    pl = next(iter(p.mapLayersByName(P.T_PUNKTE)), None)
+    if M.PUNKTE in module and pl is not None:
+        punkt_relation(pl, nl)
+    if M.BIOTOPE in module:
+        biotop_relation(fl, 'flaeche_id')
+    return p.write()
 
 
 class GoKartSetupDialog(QDialog):
@@ -548,34 +607,13 @@ class GoKartSetupDialog(QDialog):
         ECU.setProjectVariable(QgsProject.instance(), VAR_RELATION, RELATION_ID)
         return True
 
-    def write_punkt_relation(self, pl, nl):
-        """Punktaufnahme 1:n Artnachweise – QGIS/QField zeigen die Arten im Punktformular."""
-        rm = QgsProject.instance().relationManager()
-        rel = QgsRelation()
-        rel.setId(PUNKT_RELATION_ID)
-        rel.setName('Punktaufnahme → Artnachweise')
-        rel.setReferencedLayer(pl.id())
-        rel.setReferencingLayer(nl.id())
-        rel.addFieldPair('punkt_id', 'punkt_id')
-        if rel.isValid():
-            rm.removeRelation(PUNKT_RELATION_ID)
-            rm.addRelation(rel)
+    @staticmethod
+    def write_punkt_relation(pl, nl):
+        punkt_relation(pl, nl)
 
-    def write_biotop_relation(self, fl, key):
-        """Fläche 1:n Biotop-Zuordnungen – damit QField sie im Flächenformular zeigt."""
-        zl = next(iter(QgsProject.instance().mapLayersByName(B.T_ZUORDNUNG)), None)
-        if zl is None:
-            return
-        rm = QgsProject.instance().relationManager()
-        rel = QgsRelation()
-        rel.setId(BIOTOP_RELATION_ID)
-        rel.setName('Fläche → Biotoptypen')
-        rel.setReferencedLayer(fl.id())
-        rel.setReferencingLayer(zl.id())
-        rel.addFieldPair('flaeche_id', key)
-        if rel.isValid():
-            rm.removeRelation(BIOTOP_RELATION_ID)
-            rm.addRelation(rel)
+    @staticmethod
+    def write_biotop_relation(fl, key):
+        biotop_relation(fl, key)
 
 
 _VOSK_MODELS = {}  # Modell nur einmal laden (große Modelle brauchen viele Sekunden)
@@ -652,6 +690,19 @@ class GoKartDock(QDockWidget):
         self.settings = QSettings()
         body = QWidget()
         layout = QVBoxLayout(body)
+        row = QHBoxLayout()
+        self.neu_btn = QPushButton('Neues Projekt…')
+        self.neu_btn.setToolTip('Projektordner mit Artenliste, eigenen Flächen und QField-Plugin anlegen')
+        self.paket_btn = QPushButton('Fürs Tablet…')
+        self.paket_btn.setToolTip('Projekt als ZIP für QField verpacken (inkl. aktuellem QField-Plugin)')
+        self.abgleich_btn = QPushButton('Vom Tablet…')
+        self.abgleich_btn.setToolTip('Erfassungen vom Tablet (ZIP/Ordner) einspielen – mit Vorschau')
+        for b in (self.neu_btn, self.paket_btn, self.abgleich_btn):
+            row.addWidget(b)
+        layout.addLayout(row)
+        self.neu_btn.clicked.connect(self.neues_projekt)
+        self.paket_btn.clicked.connect(self.fuer_qfield_verpacken)
+        self.abgleich_btn.clicked.connect(self.tablet_einspielen)
         layout.addWidget(QLabel('Aktive Fläche'))
         self.area = QComboBox()
         layout.addWidget(self.area)
@@ -766,7 +817,7 @@ class GoKartDock(QDockWidget):
         row.addWidget(self.export_btn)
         row.addWidget(self.liste_btn)
         layout.addLayout(row)
-        self.status = QLabel('QGIS-Projekt mit gokart.gpkg öffnen.')
+        self.status = QLabel('GoKart-Projekt öffnen oder „Neues Projekt…“ anlegen.')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         scroll = QScrollArea()
@@ -863,6 +914,38 @@ class GoKartDock(QDockWidget):
 
     def on_project_layers_changed(self, *args):
         self.reload()
+
+    # ---------------------------------------------------------------- Projekt anlegen, Tablet-Austausch
+    def neues_projekt(self):
+        from .assistent import NeuesProjektDialog
+        aktiv = self.iface.activeLayer()
+        dlg = NeuesProjektDialog(self, aktiv if is_polygon_layer(aktiv) and aktiv.name() != 'flaechen' else None)
+        if not dlg.exec_() or not dlg.ergebnis:
+            return
+        qgs, _protokoll = dlg.ergebnis
+        if not self.iface.addProject(str(qgs)):
+            QMessageBox.warning(self, 'GoKart', f'Projekt angelegt, konnte aber nicht geöffnet werden:\n{qgs}')
+            return
+        neues_projekt_verknuepfen()
+        self.reload()
+        QMessageBox.information(
+            self, 'GoKart – Projekt angelegt',
+            f'Projektordner: {qgs.parent}\n\n'
+            'Weiter:\n'
+            '• am PC erfassen: Fläche wählen, Art suchen/einsprechen, „Art speichern“\n'
+            '• fürs Gelände: „Fürs Tablet…“ erzeugt ein ZIP für QField\n'
+            '• zurück: „Vom Tablet…“ spielt die Erfassungen wieder ein')
+
+    def fuer_qfield_verpacken(self):
+        from . import tablet
+        tablet.verpacken(self.iface, self)
+
+    def tablet_einspielen(self):
+        from . import tablet
+        tablet.einspielen(self.iface, self)
+
+    def spracherkennung_einrichten(self):
+        VE.VoskDialog(self).exec_()
 
     def open_setup(self):
         dlg = GoKartSetupDialog(self)
@@ -1539,13 +1622,12 @@ class GoKartDock(QDockWidget):
         if self.voice and self.voice.isRunning():
             self.message('Aufnahme läuft bereits.')
             return
-        model = self.settings.value('GoKart/vosk_model', '', type=str)
-        if not model or not Path(model).is_dir():
-            path = QFileDialog.getExistingDirectory(self, 'Vosk-Modellordner auswählen')
-            if not path:
+        if not VE.bereit():
+            VE.VoskDialog(self).exec_()
+            if not VE.bereit():
+                self.message('Spracherkennung nicht eingerichtet – Namen bitte tippen.')
                 return
-            self.settings.setValue('GoKart/vosk_model', path)
-            model = path
+        model = VE.modell_pfad()
         self.mic.setEnabled(False)
         self.foto_mic.setEnabled(False)
         self.biotop_mic.setEnabled(False)
@@ -1594,6 +1676,19 @@ class GoKartPlugin:
         self.setup_action = QAction('GoKart: Projekt einrichten…', self.iface.mainWindow())
         self.setup_action.triggered.connect(self.setup)
         self.iface.addPluginToMenu('GoKart', self.setup_action)
+        self.extra_actions = []
+        for text, methode in (('GoKart: Neues Projekt…', 'neues_projekt'),
+                              ('GoKart: Für QField verpacken…', 'fuer_qfield_verpacken'),
+                              ('GoKart: Tablet-Stand einspielen…', 'tablet_einspielen'),
+                              ('GoKart: Spracherkennung einrichten…', 'spracherkennung_einrichten')):
+            a = QAction(text, self.iface.mainWindow())
+            a.triggered.connect(lambda _c=False, m=methode: self.dock_aufruf(m))
+            self.iface.addPluginToMenu('GoKart', a)
+            self.extra_actions.append(a)
+
+    def dock_aufruf(self, methode):
+        self.show()
+        getattr(self.dock, methode)()
 
     def setup(self):
         self.show()
@@ -1620,6 +1715,8 @@ class GoKartPlugin:
             self.iface.removeToolBarIcon(self.action)
         if getattr(self, 'setup_action', None):
             self.iface.removePluginMenu('GoKart', self.setup_action)
+        for a in getattr(self, 'extra_actions', []):
+            self.iface.removePluginMenu('GoKart', a)
         if self.dock:
             self.iface.removeDockWidget(self.dock)
             self.dock.deleteLater()

@@ -50,3 +50,5 @@ testdaten.json
 *.qmd
 *.qgz
 *.patch
+kobm/
+vorlage/

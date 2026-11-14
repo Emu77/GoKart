@@ -247,7 +247,15 @@ class Quelle(QObject):
 
 class Plattform(QObject):
     def __init__(self):
-        super().__init__(); self.aufrufe = []
+        super().__init__(); self.aufrufe = []; self.exporte = []
+
+    @Property(int, constant=True)
+    def capabilities(self):
+        return 1 | (1 << 5)          # NativeCamera | CustomExport wie unter Android
+
+    @Slot(str)
+    def exportFolderTo(self, pfad):
+        self.exporte.append(pfad)
 
     @Slot(str, str, result=bool)
     def createDir(self, pfad, name):
@@ -361,6 +369,9 @@ def _schritt(n):
         p.fotoEntfernen(prop('fotosDerFlaeche')[0])
     elif n == 5:
         assert len(prop('fotosDerFlaeche')) == 1
+        p.datenSichern()
+        print('Export:', plattform.exporte)
+        assert plattform.exporte == [str(PROJEKT)] or plattform.exporte == [projekt.homePath], 'Sichern hat nichts exportiert'
         warn = [f for f in FEHLER if ('gokart' in f.lower() and not re.search(r'gokart(Api|Ecu|Fu|Gu)[0-9]', f)) or 'ohne Bearbeitungsmodus' in f]
         print('QML-Warnungen:', warn or 'keine')
         app.exit(1 if warn else 0)

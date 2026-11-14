@@ -51,6 +51,19 @@ Durchgängiger Ablauf in QField: **Fläche wählen → Pflanzennamen sprechen od
 
 **Spracheingabe offline:** Die Tastatur muss offline diktieren können, z. B. mit FUTO Keyboard (FUTO Voice Input) oder Gboard mit heruntergeladenem Offline-Sprachpaket Deutsch. Das Plugin selbst braucht keine Internetverbindung, nur die OSM-Hintergrundkarte.
 
+## Ohne Kommandozeile: alles im Desktop-Plugin (ab 0.8)
+
+Für Tester/Kartierer reicht das Plugin-ZIP (`werkzeuge/plugin_zip.py --vorlage …/gokart.gpkg`):
+
+| Knopf im GoKart-Fenster | ersetzt |
+|---|---|
+| **Neues Projekt…** | `build_gokart_projekt.py --leer/--flaechen …` + `plugin_aktualisieren.py` (Vorlage steckt im Plugin, Erfassungen werden geleert) |
+| **Fürs Tablet…** | QField Sync „Für QField verpacken“ + `qfield_paket.py` (nur Projektdatei, Layer-Dateien, `fotos/`, `DCIM/`; GeoPackages per SQLite-Backup, QGIS darf offen bleiben) |
+| **Vom Tablet…** | `abgleich.py <PC> <Tablet>` mit Vorschau, dann `--ausfuehren` (Projekt wird dafür kurz geschlossen) |
+| **● Sprechen** (1. Mal) | `pip install vosk sounddevice` + Modell-Download (Ziel: `<QGIS-Profil>/gokart/`) |
+
+Die Kommandozeilen-Werkzeuge bleiben unverändert nutzbar (z. B. `--weglassen` beim Abgleich).
+
 ## Projekt neu bauen (Ubuntu 24.04)
 
 ```bash

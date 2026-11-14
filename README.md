@@ -82,9 +82,31 @@ Geplante Funktionen:
 - `pflanzen/sprachtest.py` – Test der Spracherkennung
 - `qfield_plugin/` – QField-Projekt-Plugin, einzige Quelle (`gokart.qml`, `gokart_suche.js`, `gokart_biotop.js`, `gokart_zusatz.js`; Arten, Punktaufnahmen, Zusatzangaben, Fotos, Biotoptypen)
 - `qgis_plugin/gokart_desktop/` – QGIS-Desktop-Plugin (Einrichten, Erfassen am PC, Export, Biotop-Kataloge)
-- `werkzeuge/` – Projekt bauen, Abgleich PC ↔ Tablet, Zip fürs Tablet, Plugin kopieren, Artenliste, Biotope
+- `werkzeuge/` – Projekt bauen, Abgleich PC ↔ Tablet, Zip fürs Tablet, Plugin kopieren, Artenliste, Biotope, Plugin-ZIP (`plugin_zip.py`)
 - `tests/` – Suchtests (Node) und QField-Simulationen (PySide6), siehe `docs/QField.md`
 - `qfield_projekt/` – *nicht im Repo*: lokal gebautes Projekt
+
+## Schnellstart für Tester
+
+Nur zwei Dinge installieren, der Rest steckt im Plugin:
+
+1. **QGIS** (ab 3.22): Erweiterungen → „Aus ZIP installieren“ → `GoKart_Desktop_<version>.zip`
+2. **QField** auf Tablet/Smartphone
+
+Dann im GoKart-Fenster: **Neues Projekt…** (eigene Flächen-Shape wählen) → **Fürs Tablet…**
+(ZIP in QField über „Projekt aus ZIP importieren“ öffnen) → im Gelände erfassen → **Vom Tablet…**
+(Erfassungen zurück an den PC, mit Vorschau). Spracheingabe am PC richtet sich beim ersten
+Klick auf „● Sprechen“ selbst ein. Details: `qgis_plugin/gokart_desktop/LIESMICH.txt`.
+
+Plugin-ZIP bauen (Entwickler):
+
+```bash
+python3 werkzeuge/build_gokart_projekt.py --db …/GoKart_Pflanzen.sqlite --germansl … --ziel /tmp/vorlage --leer
+python3 werkzeuge/plugin_zip.py --vorlage /tmp/vorlage/gokart.gpkg     # → GoKart_Desktop_<version>.zip
+```
+
+Das ZIP enthält Desktop-Plugin, QField-Plugin, `abgleich.py`/`build_gokart_projekt.py` und die
+Vorlage mit Artenliste (Erfassungen geleert) – wegen der Artenliste nicht öffentlich hochladen.
 
 ## Anleitung
 

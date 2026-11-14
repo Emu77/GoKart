@@ -52,7 +52,8 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'qgis_plugin' / 'gokart_desktop'))
+_PLUGIN = Path(__file__).resolve().parents[1] / 'qgis_plugin' / 'gokart_desktop'
+sys.path.insert(0, str(_PLUGIN if _PLUGIN.is_dir() else Path(__file__).resolve().parents[1]))   # Repo bzw. im Plugin-ZIP
 import biotope as B  # noqa: E402
 import punkte as P  # noqa: E402
 import module as M  # noqa: E402
@@ -490,7 +491,9 @@ def ersetzte_nachweise(*seiten):
     return weg   # {alter Schlüssel: neuer Schlüssel}
 
 
-def main():
+def main(argv=None):
+    """argv wie auf der Kommandozeile (None = sys.argv). Gibt das Tablet-Zip zurück (nur mit --ausfuehren).
+    Auch vom QGIS-Plugin GoKart Desktop aufgerufen (Knopf „Tablet-Stand einspielen“)."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('pc', help='PC-Projekt: .qgs oder Projektordner')
     ap.add_argument('tablet', help='Tablet-Export: .zip oder Ordner')
@@ -506,7 +509,7 @@ def main():
     ap.add_argument('--pc-projekt', metavar='DATEI', help='Projektdatei im PC-Ordner (bei mehreren .qgs/.qgz)')
     ap.add_argument('--tablet-projekt', metavar='DATEI', help='Projektdatei im Tablet-Export (bei mehreren)')
     ap.add_argument('--ohne-plugin', action='store_true', help='QField-Plugin im Tablet-Zip nicht aktualisieren')
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     tablet_pfad = Path(a.tablet).expanduser().resolve()
     if Path(a.pc).suffix.lower() == '.zip':
@@ -528,7 +531,7 @@ def main():
             pc.datei.aufraeumen()
             raise
         try:
-            abgleichen(a, pc, tb, tablet_pfad)
+            return abgleichen(a, pc, tb, tablet_pfad)
         finally:
             pc.datei.aufraeumen()
             tb.datei.aufraeumen()
@@ -836,6 +839,7 @@ def abgleichen(a, pc, tb, tablet_pfad):
           f'{len(pc.biotope())} Biotope, Tablet: {len(tb.nachweise())} Nachweise / {len(tb.punkte())} Punkte / '
           f'{len(tb.fotos())} Fotos / {len(tb.biotope())} Biotope')
     print(f'→ Fürs Tablet: {ziel}')
+    return ziel
 
 
 if __name__ == '__main__':

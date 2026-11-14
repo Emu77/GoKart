@@ -21,6 +21,9 @@
 //   Zusatzangaben je Art (deckung, anzahl, phaenologie): per Sprache („Calluna, Deckung drei, blühend“) und über
 //   eine Schnellleiste nach dem Speichern – welche, legt gokart_zusatz fest (z. B. "deckung,phaenologie").
 //   Tabelle/Spalten/Layer legen build_gokart_projekt.py, abgleich.py oder GoKart Desktop („Einrichten…“) an.
+// Version 0.8.2: Knopf „💾 Sichern…“ in den Dialogen – speichert offene Änderungen und kopiert den Projektordner
+//   (gokart.gpkg + fotos/) über „Speichern unter“ an einen selbst gewählten Ort (Android: platformUtilities.exportFolderTo).
+//   Auf dem iPad gibt es diese Funktion nicht – dort Hinweis auf Dateien-App → QField → Imported Projects.
 // Getestet gegen die API von QField 4.x; QField 3.x wird über einen Fallback unterstützt.
 import QtQuick
 import QtQuick.Controls
@@ -954,6 +957,36 @@ Item {
         artenLaden();
     }
 
+    // ---------------------------------------------------------------- Daten sichern
+    // QfPlatformUtilities::CustomExport (1 << 5) – gibt es auf Android, nicht auf iOS/Desktop
+    readonly property int faehigkeitExport: 32
+
+    function exportMoeglich() {
+        try { return (Number(platformUtilities.capabilities) & faehigkeitExport) !== 0; }
+        catch (e) { return false; }
+    }
+
+    // Offene Bearbeitungen aller Erfassungs-Layer dauerhaft speichern, dann Projektordner exportieren
+    function datenSichern() {
+        konfigLaden();
+        var layer = [cfg.nachweise, cfg.punkte, fotoLayer(), zuordnungLayer(), ebene('eigene_synonyme')];
+        for (var i = 0; i < layer.length; i++) if (layer[i]) offeneAenderungenSpeichern(layer[i]);
+        var ordner = qgisProject.homePath;
+        if (!ordner) { meldung('Projektordner nicht gefunden.'); return; }
+        if (!exportMoeglich()) {
+            meldung('Sichern per Dialog gibt es hier nicht – Ordner liegt in der Dateien-App unter QField → Imported Projects.');
+            return;
+        }
+        try {
+            platformUtilities.exportFolderTo(ordner);
+            protokoll('Sichern: Export von ' + ordner + ' angestoßen', false);
+            meldung('Ort wählen – der ganze Projektordner (Daten + Fotos) wird dorthin kopiert.');
+        } catch (e) {
+            protokoll('Sichern fehlgeschlagen: ' + e, true);
+            meldung('Sichern nicht möglich – in QField: Importierte Projekte → ⋮ → „Ordner exportieren nach…“.');
+        }
+    }
+
     // ---------------------------------------------------------------- Standortfotos
     function fotoLayer() { return ebene('fotos'); }
 
@@ -1425,7 +1458,8 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                Label { text: 'GoKart · Arterfassung'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true }
+                Label { text: 'GoKart · Arterfassung'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true; elide: Text.ElideRight }
+                Button { text: '💾 Sichern…'; flat: true; onClicked: plugin.datenSichern() }
                 Button { text: 'Schließen'; flat: true; onClicked: dialog.close() }
             }
 
@@ -1861,7 +1895,8 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                Label { text: 'GoKart · Standortfotos'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true }
+                Label { text: 'GoKart · Standortfotos'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true; elide: Text.ElideRight }
+                Button { text: '💾 Sichern…'; flat: true; onClicked: plugin.datenSichern() }
                 Button { text: 'Schließen'; flat: true; onClicked: fotoDialog.close() }
             }
 
@@ -2008,7 +2043,8 @@ Item {
 
             RowLayout {
                 Layout.fillWidth: true
-                Label { text: 'GoKart · Biotoptyp'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true }
+                Label { text: 'GoKart · Biotoptyp'; font.bold: true; font.pixelSize: 20; color: plugin.gruen; Layout.fillWidth: true; elide: Text.ElideRight }
+                Button { text: '💾 Sichern…'; flat: true; onClicked: plugin.datenSichern() }
                 Button { text: 'Schließen'; flat: true; onClicked: biotopDialog.close() }
             }
 
